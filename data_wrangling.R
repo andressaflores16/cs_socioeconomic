@@ -195,3 +195,6 @@ na_rows_wdi <- wdi_wide_y[apply(wdi_wide_y, 1, function(x) mean(is.na(x))) > 0.7
 
 # removing columns that have more than 70% of NA values
 wdi_wide <- remove_empty(wdi_wide_y, which = "cols", cutoff = 0.8, quiet = FALSE)
+
+# -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
+# this is a test, sending changes directly from RStudio
