@@ -1,16 +1,17 @@
-########################
 # Instalação de pacotes
-pacotes <- c('titanic',    # carrega a base original titanic_treino 
-             'tidyverse',  # Pacote básico de datawrangling
+pacotes <- c('tidyverse',  # Pacote básico de datawrangling
              'rpart',      # Biblioteca de árvores
-             'rpart.plot', # Conjunto com Rpart, plota a parvore
              'gtools',     # funções auxiliares como quantcut,
              'Rmisc',      # carrega a função sumarySE para a descritiva
              'scales',     # importa paletas de cores
              'caret',      # Funções úteis para machine learning
-             'plotROC'
+             'plotROC',    # aula Random Forest, curva ROC?
+             'janitor',    # limpeza de dados
+             'Boruta'      # algoritmo de feature selection
+             
 )
 
+# Conferir quais pacotes ja estão instalados e carregar
 if(sum(as.numeric(!pacotes %in% installed.packages())) != 0){
   instalador <- pacotes[!pacotes %in% installed.packages()]
   for(i in 1:length(instalador)) {
@@ -21,21 +22,8 @@ if(sum(as.numeric(!pacotes %in% installed.packages())) != 0){
   sapply(pacotes, require, character = T) 
 }
 
-### ___libraries___###
-install.packages("tidyverse")
-install.packages("styler")
-install.packages("WDI")
-install.packages("wbstats")
-devtools::install_github("silkeszy/Pomona")
-install.packages("Boruta")
-
-library("tidyverse")
-library("styler")
-library("dplyr")
-library("WDI")
-library("wbstats")
-library("janitor")
-library("purrr")
-library("Pomona")
-library("Boruta")
-library("tidyr")
+# Libraries que talvez use no futuro
+#install.packages("styler")
+#install.packages("WDI")
+#install.packages("wbstats")
+#devtools::install_github("silkeszy/Pomona")

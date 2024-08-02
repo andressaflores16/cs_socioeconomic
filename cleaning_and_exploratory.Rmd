@@ -1,29 +1,89 @@
 ---
 title: "Data Cleaning and Exploratory Analysis"
+author: Andressa Flores Salvatierra
 output: github_document
-date: "2024-07-22"
+date: "2024-07-01"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r, setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE) # sets all chunks to hide R code on final doc
+options(scipen = 999) # disable scientific notation
+source("./packages.R") # install & load packages
 ```
 
-## R Markdown
+## Basics
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+First we need to load the data that will be used. In the original project 3 data sets were chosen: World Development Indicators (WDI), Health Equity and Financial Protection Indicators (HEFPI) and Health Nutrition and Population Statistics (HNPS).\
+However, this totals to 2262 variables available, and considering that there are many years of data available, it would all be too much to handle. I've chosen to stick to WDI data set first, and see if I can incorporate the other data sets later in the analysis, to gain further insights.\
+Below, a preview of the two data sets that will be merged to compose the final input data set. They are in long format:
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r, load}
+cs_section_rates_raw <- read_csv("BETRAN2018_dados_v2.csv", col_names = TRUE, show_col_types = FALSE)
+glimpse(cs_section_rates_raw)
 
-```{r cars}
-summary(cars)
+world_develop_indic_raw <- read_csv("dados/WDI_CSV/WDIData.csv", show_col_types = FALSE)
+glimpse(world_develop_indic_raw)
 ```
 
-## Including Plots
+We can see that the WDI data set has many NA values, so it probably has a lot of empty columns/rows. We will remove them from both data sets and check how many rows/cols are left:
 
-You can also embed plots, for example:
+```{r, remove-empty}
+# removing empty columns from cs section rate data (dependent variable)
+cs_rates <- cs_section_rates_raw %>%
+  purrr::discard(~ all(is.na(.)))
+# removing empty rows
+cs_rates <- cs_rates %>%
+  filter(if_all(everything(), ~ !is.na(.))) # 
+# getting the # of rows and cols to compare w/raw data
+rows_cs <- nrow(cs_rates)
+cols_cs <- ncol(cs_rates)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# same for wdi world bank data set (independent variables)
+wdi <- world_develop_indic_raw %>%
+  purrr::discard(~ all(is.na(.)))
+# removing empty rows
+wdi <- wdi %>%
+  filter(if_all(everything(), ~ !is.na(.)))
+# getting the of rows and cols to compare w/raw data
+rows_wdi <- nrow(wdi)
+cols_wdi <- ncol(wdi)
+# output number of rows and cols of each data set
+cat("# of rows cs_rates:", rows_cs, "\n# of columns cs_rates:", cols_cs, "\n")
+cat("# of rows wdi:", rows_wdi, "\n# of columns wdi:", cols_wdi, "\n")
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+As we can see, this cs section rates data set does not have any empty rows and columns, as the numbers didn't change before and after the first cleaning steps. In comparison, the wdi set changed a lot, as it had more than 100,000 empty rows which where sucessfully removed. Only one column was removed. We will later check the number of NAs remaining in the non empty columns/rows.
+
+Now we'll rename the columns so they are easier to work with in the code:
+
+```{r, rename-reorder-init-dbs, results="hide", warning=FALSE}
+wdi <- wdi %>%
+  dplyr::rename(country = 1,
+         country_code = 2, 
+         indicator_name = 3,
+         indicator_code = 4)
+
+cs_rates <- cs_rates %>%
+  dplyr::rename(country_code = 1,
+         country = 2,
+         coverage_start_year = 3,
+         coverage_end_year = 4,
+         cs_section_rate = 5)
+
+# reorder the columns
+cs_rates <- cs_rates %>% relocate(country, .before = country_code)
+```
+
+Now let's check if all the data types are correct, and make any final tweaks the data set may need before processing:
+```{r, data-types-1, }
+glimpse(cs_rates)
+glimpse(wdi)
+```
+It seems like we need to change the column `cs_section_rate` to `numeric` and the start and end year columns to `integer`:
+```{r, data-types-2}
+cs_rates_convert <- cs_rates %>% 
+  mutate(cs_section_rate = as.double(cs_section_rate)) %>%
+  mutate()
+# value_counts <- count(cs_rates$cs_section_rate)
+```
+
