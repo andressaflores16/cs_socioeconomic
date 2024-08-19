@@ -18,7 +18,21 @@ Below, a preview of the two data sets that will be merged to compose the
 final input data set. They are in long format:
 
 ``` r
-cs_section_rates_raw <- read_csv("BETRAN2018_dados_v2.csv", col_names = TRUE, show_col_types = FALSE)
+cs_section_rates_raw <- read_csv("BETRAN2018_dados_v2.csv", col_names = TRUE, col_types = cols(
+  "ISO Code" = col_character(),
+  Country = col_character(),
+  "Coverage start year" = col_integer(),
+  "Coverage end year" = col_integer(),
+  "Caesarean section rate (%)" = col_double()
+))
+```
+
+    ## Warning: One or more parsing issues, call `problems()` on your data frame for details,
+    ## e.g.:
+    ##   dat <- vroom(...)
+    ##   problems(dat)
+
+``` r
 glimpse(cs_section_rates_raw)
 ```
 
@@ -26,12 +40,17 @@ glimpse(cs_section_rates_raw)
     ## Columns: 5
     ## $ `ISO Code`                   <chr> "AFG", "AFG", "AFG", "AFG", "ALB", "ALB",…
     ## $ Country                      <chr> "Afghanistan", "Afghanistan", "Afghanista…
-    ## $ `Coverage start year`        <dbl> 2005, 2008, 2010, 2016, 1992, 1993, 1994,…
-    ## $ `Coverage end year`          <dbl> 2010, 2011, 2015, 2018, 1992, 1993, 1994,…
-    ## $ `Caesarean section rate (%)` <chr> "5", "3.6", "2.7", "6.6", "9.3", "9.8", "…
+    ## $ `Coverage start year`        <int> 2005, 2008, 2010, 2016, 1992, 1993, 1994,…
+    ## $ `Coverage end year`          <int> 2010, 2011, 2015, 2018, 1992, 1993, 1994,…
+    ## $ `Caesarean section rate (%)` <dbl> 5.0, 3.6, 2.7, 6.6, 9.3, 9.8, 7.8, 8.4, 8…
 
 ``` r
-world_develop_indic_raw <- read_csv("dados/WDI_CSV/WDIData.csv", show_col_types = FALSE)
+world_develop_indic_raw <- read_csv("dados/WDI_CSV/WDIData.csv", col_types = cols(
+  "Country Name" = col_character(),
+  "Country Code" = col_character(),
+  "Indicator Name" = col_character(),
+  "Indicator Code" = col_character()
+))
 ```
 
     ## New names:
@@ -112,9 +131,22 @@ glimpse(world_develop_indic_raw)
     ## $ `2022`           <dbl> NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
     ## $ ...68            <lgl> NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, N…
 
-We can see that the WDI data set has many NA values, so it probably has
-a lot of empty columns/rows. We will remove them from both data sets and
-check how many rows/cols are left:
+When checking for the parsing error, we can see that it’s only one line
+from the WHO data and it’s essentially a missing value, so we’ll just
+leave as is for now and filter these values later:
+
+``` r
+problems(cs_section_rates_raw)
+```
+
+    ## # A tibble: 1 × 5
+    ##     row   col expected actual file 
+    ##   <int> <int> <chr>    <chr>  <chr>
+    ## 1  1614     5 a double <1.0   ""
+
+We can also see that the WDI data set has many NA values, so it probably
+has a lot of empty columns/rows. We will remove them from both data sets
+and check how many rows/cols are left:
 
 ``` r
 # removing empty columns from cs section rate data (dependent variable)
@@ -137,25 +169,24 @@ wdi <- wdi %>%
 rows_wdi <- nrow(wdi)
 cols_wdi <- ncol(wdi)
 # output number of rows and cols of each data set
-cat("# of rows cs_rates:", rows_cs, "\n# of columns cs_rates:", cols_cs, "\n")
+cat("# of rows cs_rates Before | After: 2024 |", rows_cs, "\n# of columns cs_rates Before | After: 5 |", cols_cs, "\n")
 ```
 
-    ## # of rows cs_rates: 2024 
-    ## # of columns cs_rates: 5
+    ## # of rows cs_rates Before | After: 2024 | 2023 
+    ## # of columns cs_rates Before | After: 5 | 5
 
 ``` r
-cat("# of rows wdi:", rows_wdi, "\n# of columns wdi:", cols_wdi, "\n")
+cat("# of rows wdi Before | After: 395,276 |", rows_wdi, "\n# of columns wdi Before | After: 68 |", cols_wdi, "\n")
 ```
 
-    ## # of rows wdi: 24357 
-    ## # of columns wdi: 67
+    ## # of rows wdi Before | After: 395,276 | 24357 
+    ## # of columns wdi Before | After: 68 | 67
 
-As we can see, this cs section rates data set does not have any empty
-rows and columns, as the numbers didn’t change before and after the
-first cleaning steps. In comparison, the wdi set changed a lot, as it
-had more than 100,000 empty rows which where sucessfully removed. Only
-one column was removed. We will later check the number of NAs remaining
-in the non empty columns/rows.
+As we can see, the cs section rates data set had only one line removed,
+the one which showed up in the parsing error. In comparison, the wdi set
+changed a lot, as it had more than 100,000 empty rows which where
+successfully removed. Only one column was removed. We will later check
+the number of NAs remaining in the non empty columns/rows.
 
 Now we’ll rename the columns so they are easier to work with in the
 code:
@@ -178,116 +209,171 @@ cs_rates <- cs_rates %>%
 cs_rates <- cs_rates %>% relocate(country, .before = country_code)
 ```
 
-Now let’s check if all the data types are correct, and make any final
-tweaks the data set may need before processing:
+Let’s check if our changes occured sucessfully:
 
 ``` r
-sapply(cs_rates, class)
+glimpse(cs_rates)
 ```
 
-    ##             country        country_code coverage_start_year   coverage_end_year 
-    ##         "character"         "character"           "numeric"           "numeric" 
-    ##     cs_section_rate 
-    ##         "character"
+    ## Rows: 2,023
+    ## Columns: 5
+    ## $ country             <chr> "Afghanistan", "Afghanistan", "Afghanistan", "Afgh…
+    ## $ country_code        <chr> "AFG", "AFG", "AFG", "AFG", "ALB", "ALB", "ALB", "…
+    ## $ coverage_start_year <int> 2005, 2008, 2010, 2016, 1992, 1993, 1994, 1995, 19…
+    ## $ coverage_end_year   <int> 2010, 2011, 2015, 2018, 1992, 1993, 1994, 1995, 19…
+    ## $ cs_section_rate     <dbl> 5.0, 3.6, 2.7, 6.6, 9.3, 9.8, 7.8, 8.4, 8.6, 10.0,…
 
 ``` r
-sapply(wdi, class)
+glimpse(wdi)
+```
+
+    ## Rows: 24,357
+    ## Columns: 67
+    ## $ country        <chr> "Africa Eastern and Southern", "Africa Eastern and Sout…
+    ## $ country_code   <chr> "AFE", "AFE", "AFE", "AFE", "AFE", "AFE", "AFE", "AFE",…
+    ## $ indicator_name <chr> "Age dependency ratio (% of working-age population)", "…
+    ## $ indicator_code <chr> "SP.POP.DPND", "SP.POP.DPND.OL", "SP.POP.DPND.YG", "BM.…
+    ## $ `1960`         <dbl> 89.5946042, 5.6269436, 83.6687052, 5599997.7622409, 802…
+    ## $ `1961`         <dbl> 89.873370, 5.598776, 83.936992, 5599997.762241, 802701.…
+    ## $ `1962`         <dbl> 90.1917207, 5.5717185, 84.2439941, 8399996.6433613, 802…
+    ## $ `1963`         <dbl> 90.5746781, 5.5497017, 84.6131401, 15399993.8461625, 80…
+    ## $ `1964`         <dbl> 90.9527190, 5.5342357, 84.9945123, 15399993.8461625, 80…
+    ## $ `1965`         <dbl> 91.3468207, 5.5263477, 85.3985091, 26599989.3706442, 10…
+    ## $ `1966`         <dbl> 91.7855001, 5.5254460, 85.8336878, 26599989.3706442, 10…
+    ## $ `1967`         <dbl> 92.2119694, 5.5316322, 86.2517743, 32199987.1328851, 10…
+    ## $ `1968`         <dbl> 92.6173995, 5.5437746, 86.6472132, 37799984.8951260, 10…
+    ## $ `1969`         <dbl> 93.0188868, 5.5584769, 87.0384893, 39199984.3356862, 10…
+    ## $ `1970`         <dbl> 93.4629660, 5.5756951, 87.4691258, 46199981.5384874, 12…
+    ## $ `1971`         <dbl> 93.9225490, 5.5964249, 87.9048856, 47527375.6763246, 12…
+    ## $ `1972`         <dbl> 94.3642444, 5.6173666, 88.3168559, 63773980.2137103, 12…
+    ## $ `1973`         <dbl> 94.6906945, 5.6358203, 88.6126209, 78078851.9005019, 12…
+    ## $ `1974`         <dbl> 94.8487166, 5.6486931, 88.7450932, 72148373.0902195, 12…
+    ## $ `1975`         <dbl> 94.9673744, 5.6580336, 88.8406821, 107043108.0380230, 1…
+    ## $ `1976`         <dbl> 95.1485687, 5.6724073, 88.9937682, 111424412.8323970, 1…
+    ## $ `1977`         <dbl> 95.276895, 5.686525, 89.088311, 147872278.821728, 18008…
+    ## $ `1978`         <dbl> 95.2705420, 5.6994154, 89.0329039, 181309089.7682300, 1…
+    ## $ `1979`         <dbl> 95.2767184, 5.7162170, 88.9804601, 177728123.5716670, 2…
+    ## $ `1980`         <dbl> 95.190407, 5.719248, 88.882973, 220288726.280588, 22083…
+    ## $ `1981`         <dbl> 95.125777, 5.717114, 88.832212, 234429968.226397, 24023…
+    ## $ `1982`         <dbl> 95.134398, 5.719387, 88.850052, 212926712.018452, 26023…
+    ## $ `1983`         <dbl> 95.006717, 5.707685, 88.738449, 220912474.528507, 27759…
+    ## $ `1984`         <dbl> 94.771360, 5.689743, 88.516794, 173752336.219322, 28978…
+    ## $ `1985`         <dbl> 94.548269, 5.678466, 88.297263, 126039179.160406, 30908…
+    ## $ `1986`         <dbl> 94.391103, 5.667027, 88.142303, 134591645.837634, 33761…
+    ## $ `1987`         <dbl> 94.380672, 5.665872, 88.128994, 189284510.541473, 35683…
+    ## $ `1988`         <dbl> 94.479295, 5.660053, 88.236488, 179288967.013878, 38170…
+    ## $ `1989`         <dbl> 94.547037, 5.643018, 88.334999, 162062975.153806, 40929…
+    ## $ `1990`         <dbl> 94.580170, 5.632531, 88.403091, 167274402.486613, 43850…
+    ## $ `1991`         <dbl> 94.612593, 5.630006, 88.474471, 209382301.388228, 45879…
+    ## $ `1992`         <dbl> 94.668838, 5.631488, 88.570916, 180139306.880349, 46516…
+    ## $ `1993`         <dbl> 94.786017, 5.627153, 88.695881, 260238512.710708, 48495…
+    ## $ `1994`         <dbl> 94.483484, 5.601098, 88.406333, 236955019.516439, 51106…
+    ## $ `1995`         <dbl> 94.007709, 5.567320, 87.952566, 393810107.268975, 54564…
+    ## $ `1996`         <dbl> 93.889806, 5.552167, 87.825822, 383757638.537913, 58542…
+    ## $ `1997`         <dbl> 93.727470, 5.537749, 87.623896, 386585738.585637, 63969…
+    ## $ `1998`         <dbl> 93.268337, 5.510807, 87.118459, 343401984.913520, 70258…
+    ## $ `1999`         <dbl> 92.653965, 5.482828, 86.452163, 329550880.441077, 76599…
+    ## $ `2000`         <dbl> 92.044732, 5.462842, 85.768931, 396369882.141538, 74081…
+    ## $ `2001`         <dbl> 91.402455, 5.445348, 85.047934, 458714373.790437, 75972…
+    ## $ `2002`         <dbl> 90.771396, 5.427740, 84.342583, 587668403.787097, 79733…
+    ## $ `2003`         <dbl> 90.188457, 5.409492, 83.693345, 762155199.057510, 84114…
+    ## $ `2004`         <dbl> 89.648105, 5.393492, 83.097151, 1066498399.690930, 8604…
+    ## $ `2005`         <dbl> 89.176045, 5.383261, 82.581709, 1260750199.582890, 8355…
+    ## $ `2006`         <dbl> 88.748358, 5.375328, 82.123852, 1460852924.740550, 8492…
+    ## $ `2007`         <dbl> 88.345801, 5.368210, 81.705422, 1836130528.419840, 8795…
+    ## $ `2008`         <dbl> 87.974597, 5.362260, 81.338145, 1913592059.928240, 9005…
+    ## $ `2009`         <dbl> 87.619597, 5.363427, 80.990470, 1912270943.608640, 9448…
+    ## $ `2010`         <dbl> 87.238455, 5.378027, 80.609205, 2068158357.135980, 9456…
+    ## $ `2011`         <dbl> 86.823065, 5.404897, 80.192475, 2218812932.794660, 9210…
+    ## $ `2012`         <dbl> 86.407767, 5.438799, 79.777847, 2366000693.418560, 8944…
+    ## $ `2013`         <dbl> 85.976176, 5.473612, 79.352779, 2379213510.251230, 7647…
+    ## $ `2014`         <dbl> 85.499375, 5.509918, 78.874913, 2368730261.332780, 7586…
+    ## $ `2015`         <dbl> 84.957551, 5.544147, 78.311969, 2256460184.697380, 7689…
+    ## $ `2016`         <dbl> 84.439468, 5.584600, 77.798386, 2394607870.654370, 8320…
+    ## $ `2017`         <dbl> 83.930980, 5.631777, 77.297024, 2552763140.717230, 8226…
+    ## $ `2018`         <dbl> 83.342388, 5.677017, 76.690679, 2161661760.558540, 5362…
+    ## $ `2019`         <dbl> 82.6920587, 5.7184242, 76.0285640, 1787646004.5088401, …
+    ## $ `2020`         <dbl> 81.9689633, 5.7331105, 75.3108616, 1695216299.9684601, …
+    ## $ `2021`         <dbl> 81.1899885, 5.7061994, 74.5651490, 1895853917.3613501, …
+    ## $ `2022`         <dbl> 80.3853443, 5.6623527, 73.7999900, 1912708774.6885400, …
+
+It seems like all the columns full of NAs have been removed from de WDI
+dataset, and also the column names have been successfully changed and
+reordered. We will now remove any duplicate rows from both datasets:
+
+``` r
+# adding an id for each row
+cs_rates_id <- cs_rates %>% dplyr::mutate(row_id = dplyr::row_number())
+cs_rates_distinct <- cs_rates_id %>% distinct()
+cs_removed_dupes <- anti_join(cs_rates_id, cs_rates_distinct, by = "row_id")
+print(cs_removed_dupes)
+```
+
+    ## # A tibble: 0 × 6
+    ## # ℹ 6 variables: country <chr>, country_code <chr>, coverage_start_year <int>,
+    ## #   coverage_end_year <int>, cs_section_rate <dbl>, row_id <int>
+
+``` r
+wdi_id <- wdi %>% dplyr::mutate(row_id = dplyr::row_number())
+wdi_distinct <- wdi_id %>% distinct()
+wdi_removed_dupes <- anti_join(wdi_id, wdi_distinct, by = "row_id")
+print(wdi_removed_dupes)
+```
+
+    ## # A tibble: 0 × 68
+    ## # ℹ 68 variables: country <chr>, country_code <chr>, indicator_name <chr>,
+    ## #   indicator_code <chr>, 1960 <dbl>, 1961 <dbl>, 1962 <dbl>, 1963 <dbl>,
+    ## #   1964 <dbl>, 1965 <dbl>, 1966 <dbl>, 1967 <dbl>, 1968 <dbl>, 1969 <dbl>,
+    ## #   1970 <dbl>, 1971 <dbl>, 1972 <dbl>, 1973 <dbl>, 1974 <dbl>, 1975 <dbl>,
+    ## #   1976 <dbl>, 1977 <dbl>, 1978 <dbl>, 1979 <dbl>, 1980 <dbl>, 1981 <dbl>,
+    ## #   1982 <dbl>, 1983 <dbl>, 1984 <dbl>, 1985 <dbl>, 1986 <dbl>, 1987 <dbl>,
+    ## #   1988 <dbl>, 1989 <dbl>, 1990 <dbl>, 1991 <dbl>, 1992 <dbl>, 1993 <dbl>, …
+
+Apparently everything is in order, there are no duplicated rows. Let’s
+do one final check to see how much data is missing from the WDI dataset,
+which is the bigger and most problematic of our datasets.
+
+``` r
+# missing percentage per column
+sapply(wdi, function(x) sum(is.na(x)) / length(x) * 100)
 ```
 
     ##        country   country_code indicator_name indicator_code           1960 
-    ##    "character"    "character"    "character"    "character"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1961           1962           1963           1964           1965 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1966           1967           1968           1969           1970 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1971           1972           1973           1974           1975 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1976           1977           1978           1979           1980 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1981           1982           1983           1984           1985 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1986           1987           1988           1989           1990 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1991           1992           1993           1994           1995 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           1996           1997           1998           1999           2000 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           2001           2002           2003           2004           2005 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           2006           2007           2008           2009           2010 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           2011           2012           2013           2014           2015 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           2016           2017           2018           2019           2020 
-    ##      "numeric"      "numeric"      "numeric"      "numeric"      "numeric" 
+    ##              0              0              0              0              0 
     ##           2021           2022 
-    ##      "numeric"      "numeric"
+    ##              0              0
 
-It seems like we only need to change the column `cs_section_rate` to
-`numeric`:
+It seems like we removed all of the rows which had missing values. Most
+likely the empty rows represented the countries which have more problems
+with gathering/communicating data. Depending on future results, we can
+come back to this and understand which countries are missing and if it’s
+possible to impute some data.
 
-``` r
-# cs_rates <- cs_rates %>% 
-#  mutate(cs_section_rate = as.double(cs_section_rate))
-table(cs_rates$cs_section_rate)
-```
-
-    ## 
-    ## <1.0  0.3  0.4  0.5  0.6  0.7  0.8  0.9    1  1.1  1.2  1.3  1.4  1.5  1.6  1.7 
-    ##    1    1    1    1    2    2    3    1    5    2    2    5    6    5    8    6 
-    ##  1.8  1.9   10 10.1 10.2 10.3 10.4 10.5 10.6 10.7 10.8 10.9   11 11.1 11.2 11.3 
-    ##    5    9    9    6    4    3    3    7    4    3    5    4    6    6    6    5 
-    ## 11.4 11.5 11.6 11.7 11.8 11.9   12 12.1 12.2 12.3 12.4 12.5 12.6 12.7 12.8 12.9 
-    ##    5    5    6    3    4    3    3    3    4    8    9    7    7    8    7    6 
-    ##   13 13.1 13.2 13.3 13.4 13.5 13.6 13.7 13.8 13.9   14 14.1 14.2 14.3 14.4 14.5 
-    ##    8    6    2    1    9    8    7    5    7    7    5    6    8    1    5    3 
-    ## 14.6 14.7 14.8 14.9   15 15.1 15.2 15.3 15.4 15.5 15.6 15.7 15.8 15.9   16 16.1 
-    ##   11    9    4    4    8    6   10    6    4    6   10    6    7   12   20    7 
-    ## 16.2 16.3 16.4 16.5 16.6 16.7 16.8 16.9   17 17.1 17.2 17.3 17.4 17.5 17.6 17.7 
-    ##    8    9   14    7    9    7    7    8   14    7   10   10    9   10   10    6 
-    ## 17.8 17.9   18 18.1 18.2 18.3 18.4 18.5 18.6 18.7 18.8 18.9   19 19.1 19.2 19.3 
-    ##    8    4    8    3    4    8    4    8    4    8    4    9    6   10    7    7 
-    ## 19.4 19.5 19.6 19.7 19.8 19.9    2  2.1  2.2  2.3  2.4  2.5  2.6  2.7  2.8  2.9 
-    ##    6    9    6    7    7   10   13    7    2    3    6   11    5   12    4    3 
-    ##   20 20.1 20.2 20.3 20.4 20.5 20.6 20.7 20.8 20.9   21 21.1 21.2 21.3 21.4 21.5 
-    ##    7    7    5    6    7   10    9    3   10    9   10    6   13    7    4    5 
-    ## 21.6 21.7 21.8 21.9   22 22.1 22.2 22.3 22.4 22.5 22.6 22.7 22.8 22.9   23 23.1 
-    ##    4    4    5    7   12    7    2    5    5    3    4    9    3    6    5    4 
-    ## 23.2 23.3 23.4 23.5 23.6 23.7 23.8 23.9   24 24.1 24.2 24.3 24.4 24.5 24.6 24.7 
-    ##    6    3    6    3   13    3    5   10    5    6    3    3    8    5    5    4 
-    ## 24.8 24.9   25 25.1 25.2 25.3 25.4 25.5 25.6 25.7 25.8 25.9   26 26.1 26.2 26.3 
-    ##    3    8    6    3    4    8    2    4    2    5    7    5    5    4    7    3 
-    ## 26.4 26.5 26.6 26.7 26.8 26.9   27 27.1 27.2 27.3 27.4 27.5 27.6 27.7 27.8 27.9 
-    ##    2    7    6    5    4    7    3    4    1    8    3    8    4    4    3    4 
-    ##   28 28.1 28.2 28.4 28.5 28.6 28.7 28.8 28.9   29 29.1 29.2 29.3 29.4 29.5 29.6 
-    ##    6    6    5    3    1    5    3    7    5    5    4    3    4    5    6    2 
-    ## 29.7 29.8 29.9    3  3.1  3.2  3.3  3.4  3.5  3.6  3.7  3.8  3.9   30 30.1 30.2 
-    ##    4    3    6    9   10    6    4    5    4    5    7    8    7    2    1    4 
-    ## 30.3 30.4 30.5 30.6 30.7 30.8 30.9   31 31.1 31.2 31.3 31.4 31.5 31.6 31.7 31.8 
-    ##    5    5    6    3    5    2    5    5    4    3    7    2    4    5    2    3 
-    ## 31.9   32 32.1 32.2 32.3 32.4 32.5 32.6 32.7 32.8 32.9   33 33.1 33.2 33.3 33.4 
-    ##    7    6    2    5    5    4    2    1    4    6    3    5    7    8    4    3 
-    ## 33.5 33.6 33.7 33.8   34 34.1 34.2 34.3 34.4 34.5 34.6 34.7 34.8 34.9   35 35.1 
-    ##    2    3    6    2    4    2    2    3    1    3    3    3    2    3    3    1 
-    ## 35.2 35.3 35.4 35.6 35.7 35.8 35.9   36 36.1 36.2 36.3 36.4 36.7 36.9   37 37.2 
-    ##    3    2    3    4    1    2    1    2    1    2    1    4    3    2    1    1 
-    ## 37.3 37.4 37.5 37.6 37.7 37.8   38 38.1 38.3 38.6 38.9   39 39.1 39.2 39.4 39.5 
-    ##    4    2    3    1    1    2    1    3    1    2    1    2    3    1    1    1 
-    ## 39.6 39.8 39.9    4  4.1  4.2  4.3  4.4  4.5  4.6  4.7  4.8  4.9   40 40.1 40.2 
-    ##    1    1    1    7    3    1    2    5    5   10    3    3    4    3    2    1 
-    ## 40.4 40.7 40.8 40.9   41 41.1 41.4 41.6 41.8 41.9 42.8   43 43.1 43.2 43.6 43.7 
-    ##    2    1    1    1    1    1    1    1    1    1    1    2    1    3    1    1 
-    ## 43.8 43.9 44.4 44.5   45 45.3 45.5 45.6 45.8 45.9 46.1 46.2 46.3 46.4 46.5 46.6 
-    ##    2    1    1    1    1    1    1    3    1    1    1    3    1    1    1    2 
-    ## 46.7 46.9 47.1 47.3 47.7 47.8 48.1 48.3 48.4 48.5 48.7 48.8   49 49.2 49.3 49.6 
-    ##    1    1    1    1    1    2    1    1    1    1    1    1    1    1    1    1 
-    ##    5  5.1  5.2  5.3  5.4  5.5  5.6  5.7  5.8  5.9   50 50.4 50.6 50.7 50.8 50.9 
-    ##    5   10    2    9    5    3    4    3    6    5    1    1    1    1    1    1 
-    ## 51.8 52.2 52.3 52.5 53.3 53.4 53.7 55.3 55.4 55.5 55.6 55.7 56.4 56.6 56.9   57 
-    ##    1    1    1    1    1    1    2    2    1    1    1    1    1    1    2    1 
-    ## 58.1    6  6.1  6.2  6.3  6.4  6.5  6.6  6.7  6.8  6.9    7  7.1  7.2  7.3  7.4 
-    ##    1    5    4    5    7    6    4    9    5    6    3    4    4    6    4    3 
-    ##  7.5  7.6  7.7  7.8  7.9    8  8.1  8.2  8.3  8.4  8.5  8.6  8.7  8.8  8.9    9 
-    ##    7    2    4    4    4    2    3    2    3    5    3   10    4    3    2    8 
-    ##  9.1  9.2  9.3  9.4  9.5  9.6  9.7  9.8  9.9 
-    ##    7    5   10    6    3   11    5    3    6
+Now, we will begin filtering the data sets so we can merge them together
+without inconsistencies. First, we need to check country names and
+country codes, which are our most important identifiers. Since both
+datasets are from different sources, we need to make them compatible:

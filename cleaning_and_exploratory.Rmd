@@ -18,14 +18,34 @@ However, this totals to 2262 variables available, and considering that there are
 Below, a preview of the two data sets that will be merged to compose the final input data set. They are in long format:
 
 ```{r, load}
-cs_section_rates_raw <- read_csv("BETRAN2018_dados_v2.csv", col_names = TRUE, show_col_types = FALSE)
+cs_section_rates_raw <- read_csv("BETRAN2018_dados_v2.csv", col_names = TRUE, col_types = cols(
+  "ISO Code" = col_character(),
+  Country = col_character(),
+  "Coverage start year" = col_integer(),
+  "Coverage end year" = col_integer(),
+  "Caesarean section rate (%)" = col_double()
+))
+  
 glimpse(cs_section_rates_raw)
 
-world_develop_indic_raw <- read_csv("dados/WDI_CSV/WDIData.csv", show_col_types = FALSE)
+world_develop_indic_raw <- read_csv("dados/WDI_CSV/WDIData.csv", col_types = cols(
+  "Country Name" = col_character(),
+  "Country Code" = col_character(),
+  "Indicator Name" = col_character(),
+  "Indicator Code" = col_character()
+))
+
 glimpse(world_develop_indic_raw)
 ```
 
-We can see that the WDI data set has many NA values, so it probably has a lot of empty columns/rows. We will remove them from both data sets and check how many rows/cols are left:
+When checking for the parsing error, we can see that it's only one line from the WHO data and it's essentially a missing value, so we'll just leave as is for now and filter these values later:
+
+```{r parsing-problems}
+problems(cs_section_rates_raw)
+```
+
+
+We can also see that the WDI data set has many NA values, so it probably has a lot of empty columns/rows. We will remove them from both data sets and check how many rows/cols are left:
 
 ```{r, remove-empty}
 # removing empty columns from cs section rate data (dependent variable)
@@ -48,11 +68,11 @@ wdi <- wdi %>%
 rows_wdi <- nrow(wdi)
 cols_wdi <- ncol(wdi)
 # output number of rows and cols of each data set
-cat("# of rows cs_rates:", rows_cs, "\n# of columns cs_rates:", cols_cs, "\n")
-cat("# of rows wdi:", rows_wdi, "\n# of columns wdi:", cols_wdi, "\n")
+cat("# of rows cs_rates Before | After: 2024 |", rows_cs, "\n# of columns cs_rates Before | After: 5 |", cols_cs, "\n")
+cat("# of rows wdi Before | After: 395,276 |", rows_wdi, "\n# of columns wdi Before | After: 68 |", cols_wdi, "\n")
 ```
 
-As we can see, this cs section rates data set does not have any empty rows and columns, as the numbers didn't change before and after the first cleaning steps. In comparison, the wdi set changed a lot, as it had more than 100,000 empty rows which where sucessfully removed. Only one column was removed. We will later check the number of NAs remaining in the non empty columns/rows.
+As we can see, the cs section rates data set had only one line removed, the one which showed up in the parsing error. In comparison, the wdi set changed a lot, as it had more than 100,000 empty rows which where successfully removed. Only one column was removed. We will later check the number of NAs remaining in the non empty columns/rows.
 
 Now we'll rename the columns so they are easier to work with in the code:
 
@@ -74,16 +94,40 @@ cs_rates <- cs_rates %>%
 cs_rates <- cs_rates %>% relocate(country, .before = country_code)
 ```
 
-Now let's check if all the data types are correct, and make any final tweaks the data set may need before processing:
-```{r, data-types-1, }
+Let's check if our changes occured sucessfully:
+```{r, glimpse-1}
 glimpse(cs_rates)
 glimpse(wdi)
 ```
-It seems like we need to change the column `cs_section_rate` to `numeric` and the start and end year columns to `integer`:
-```{r, data-types-2}
-cs_rates_convert <- cs_rates %>% 
-  mutate(cs_section_rate = as.double(cs_section_rate)) %>%
-  mutate()
-# value_counts <- count(cs_rates$cs_section_rate)
+
+It seems like all the columns full of NAs have been removed from de WDI dataset, and also the column names have been successfully changed and reordered. We will now remove any duplicate rows from both datasets:
+
+```{r, remove-dupes-1}
+# adding an id for each row
+cs_rates_id <- cs_rates %>% dplyr::mutate(row_id = dplyr::row_number())
+cs_rates_distinct <- cs_rates_id %>% distinct()
+cs_removed_dupes <- anti_join(cs_rates_id, cs_rates_distinct, by = "row_id")
+print(cs_removed_dupes)
+
+wdi_id <- wdi %>% dplyr::mutate(row_id = dplyr::row_number())
+wdi_distinct <- wdi_id %>% distinct()
+wdi_removed_dupes <- anti_join(wdi_id, wdi_distinct, by = "row_id")
+print(wdi_removed_dupes)
 ```
+
+Apparently everything is in order, there are no duplicated rows. Let's do one final check to see how much data is missing from the WDI dataset, which is the bigger and most problematic of our datasets. 
+
+```{r, missing-values-1}
+# missing percentage per column
+sapply(wdi, function(x) sum(is.na(x)) / length(x) * 100)
+```
+
+It seems like we removed all of the rows which had missing values. Most likely the empty rows represented the countries which have more problems with gathering/communicating data. Depending on future results, we can come back to this and understand which countries are missing and if it's possible to impute some data.
+
+Now, we will begin filtering the data sets so we can merge them together without inconsistencies. First, we need to check country names and country codes, which are our most important identifiers. Since both datasets are from different sources, we need to make them compatible:
+
+```{r, }
+
+```
+
 
