@@ -1,10 +1,11 @@
 ---
 title: "Data Cleaning and Exploratory Analysis"
-author: Andressa Flores Salvatierra
-output: github_document
-date: "2024-07-01"
+author: "Andressa Flores Salvatierra"
+date: "`r format(as.Date('2024-07-01'), '%B %Y')`"
+output: 
+  github_document:
+    html_preview: false
 ---
-
 ```{r, setup, include=FALSE}
 #knitr::opts_chunk$set(echo = FALSE) # sets all chunks to hide R code on final doc
 options(scipen = 999) # disable scientific notation
@@ -45,7 +46,7 @@ problems(cs_section_rates_raw)
 ```
 
 
-We can also see that the WDI data set has many NA values, so it probably has a lot of empty columns/rows. We will remove them from both data sets and check how many rows/cols are left:
+We can also see that the `wdi` dataset has many NA values, so it probably has a lot of empty columns/rows. We will remove them from both data sets and check how many rows/cols are left:
 
 ```{r, remove-empty}
 # removing empty columns from cs section rate data (dependent variable)
@@ -72,7 +73,7 @@ cat("# of rows cs_rates Before | After: 2024 |", rows_cs, "\n# of columns cs_rat
 cat("# of rows wdi Before | After: 395,276 |", rows_wdi, "\n# of columns wdi Before | After: 68 |", cols_wdi, "\n")
 ```
 
-As we can see, the cs section rates data set had only one line removed, the one which showed up in the parsing error. In comparison, the wdi set changed a lot, as it had more than 100,000 empty rows which where successfully removed. Only one column was removed. We will later check the number of NAs remaining in the non empty columns/rows.
+As we can see, the cs section rates data set had only one line removed, the one which showed up in the parsing error. In comparison, the `wdi` set changed a lot, as it had more than 100,000 empty rows which where successfully removed. Only one column was removed. We will later check the number of NAs remaining in the non empty columns/rows.
 
 Now we'll rename the columns so they are easier to work with in the code:
 
@@ -94,28 +95,38 @@ cs_rates <- cs_rates %>%
 cs_rates <- cs_rates %>% relocate(country, .before = country_code)
 ```
 
-Let's check if our changes occured sucessfully:
+Let's check if our changes occurred successfully:
 ```{r, glimpse-1}
 glimpse(cs_rates)
 glimpse(wdi)
 ```
 
-It seems like all the columns full of NAs have been removed from de WDI dataset, and also the column names have been successfully changed and reordered. We will now remove any duplicate rows from both datasets:
+It seems like all the columns full of NAs have been removed from de `wdi` dataset, and also the column names have been successfully changed and reordered. We will now remove any duplicate rows from both datasets:
 
 ```{r, remove-dupes-1}
 # adding an id for each row
-cs_rates_id <- cs_rates %>% dplyr::mutate(row_id = dplyr::row_number())
-cs_rates_distinct <- cs_rates_id %>% distinct()
-cs_removed_dupes <- anti_join(cs_rates_id, cs_rates_distinct, by = "row_id")
+cs_rates_id <- cs_rates %>%
+  dplyr::mutate(row_id = row_number())
+
+cs_removed_dupes <- cs_rates_id %>%
+  distinct() %>%
+  anti_join(cs_rates_id, by = "row_id")
 print(cs_removed_dupes)
 
-wdi_id <- wdi %>% dplyr::mutate(row_id = dplyr::row_number())
-wdi_distinct <- wdi_id %>% distinct()
-wdi_removed_dupes <- anti_join(wdi_id, wdi_distinct, by = "row_id")
+# adding an id for each row
+wdi_id <- wdi %>%
+  dplyr::mutate(row_id = row_number())
+
+wdi_removed_dupes <- wdi_id %>%
+  distinct() %>%
+  anti_join(wdi_id, by = "row_id")
 print(wdi_removed_dupes)
+
+rm(cs_rates_id, cs_removed_dupes, wdi_id, wdi_removed_dupes)
+gc()
 ```
 
-Apparently everything is in order, there are no duplicated rows. Let's do one final check to see how much data is missing from the WDI dataset, which is the bigger and most problematic of our datasets. 
+Apparently everything is in order, there are no duplicated rows. Let's do one final check to see how much data is missing from the `wdi` dataset, which is the bigger and most problematic of our datasets. 
 
 ```{r, missing-values-1}
 # missing percentage per column
@@ -124,10 +135,61 @@ sapply(wdi, function(x) sum(is.na(x)) / length(x) * 100)
 
 It seems like we removed all of the rows which had missing values. Most likely the empty rows represented the countries which have more problems with gathering/communicating data. Depending on future results, we can come back to this and understand which countries are missing and if it's possible to impute some data.
 
-Now, we will begin filtering the data sets so we can merge them together without inconsistencies. First, we need to check country names and country codes, which are our most important identifiers. Since both datasets are from different sources, we need to make them compatible:
+Another thing we must pay attention to is the range of years that will be included in the final input dataset of the model. Considering the target variable as `cs_section_rate`, the range of years that has values for this variable will determine which range of the `wdi` dataset will be filtered:
+```{r, years-covered}
+# checking range of years included in cs_rates
+cs_min_year <- min(cs_rates$coverage_start_year)
+cs_max_year <- max(cs_rates$coverage_end_year)
+cat("The range of years is between", cs_min_year, "and", cs_max_year)
+```
 
-```{r, }
+This means that we can filter out all columns that are not contemplated in this range from the `wdi` dataset, which is unnecessary data:
+```{r, removing-years-wdi}
+years_to_keep <- as.character(cs_min_year:cs_max_year)
 
+# selects columns that are not named w/4 digits OR if it's in years_to_keep vector
+wdi <- wdi %>%
+ select(!matches("^\\d{4}$") | all_of(years_to_keep))
 ```
 
 
+Now, we will begin filtering the datasets so we can merge them together without inconsistencies. First, we need to check country names and country codes, which are our most important identifiers. Since both datasets are from different sources, we need to make them compatible:
+
+```{r, filtering-by-countries-1}
+# typo found in one of the country codes in WHO data (VEM instead of VEN, representing Venezuela), correction
+cs_rates <- cs_rates %>%
+  mutate(country_code = if_else(country_code == "VEM", "VEN", country_code))
+
+# countries in (Betran, 2018) WHO study (cs_rates) to filter WDI dataset
+countries_who <- cs_rates %>%
+  select(country_code, country) %>%
+  distinct()
+
+# filter using country codes from cs_rates
+wdi_cs_who <- wdi %>%
+  filter(country_code %in% countries_who$country_code)
+
+# checking which countries in cs_rates are available in wdi
+wdi_filt_cs <- wdi_cs_who %>%
+  select(country_code, country) %>%
+  distinct()
+
+# left join to find differences between dfs
+combined_wdi <- countries_who %>%
+  left_join(wdi_filt_cs, by = "country_code", suffix = c("_who", "_wdi"))
+
+print(combined_wdi)
+```
+The table above represents all the countries that will be contemplated by the analysis, which are the ones with matching country codes in both datasets. Considering that one error was already found in a country code in the `cs_rates` dataset, each country code was checked manually/visually by me, using an open database online. No other errors were found, only slight differences in country names. 
+Regarding the multiple `country` values for the GBR `country_code`, all GBR entries will be removed from analysis for now:
+```{r, minus-gbr}
+# removing observations from GBR
+wdi_who_mgb <- wdi_cs_who %>%
+  filter(country_code != "GBR")
+```
+
+If we compare the structures of each dataset, we can see that in `wdi` we have each line representing one of the WDI indicators, and each column (aside from the country identifiers and indicator name) is a given year and the respective value for each indicator in that year. This is known as long format dataset, and we need to transform it to a wide format
+
+## Pivoting data to generate final combined dataset
+
+We have now filtered out the most problematic lines from our datasets, but there is still one more thing we need to modify in the `cs_rates` dataset so that we're able to merge it with `wdi`. The World Bank dataset has 

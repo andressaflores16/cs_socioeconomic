@@ -120,7 +120,7 @@ health_nutrition_countries_who <- health_nutrition_countries_who %>%
 wdi_countries_who <- world_develop_indic %>% filter(world_develop_indic$country_code %in% countries_who$country_code)
 wdi_filtered_countries <- unique(wdi_countries_who[c("country_code", "country")])
 
-# left join to combine data frames to check which countries from WHO data aren't present in the health_nutrition table
+# left join to combine data frames to check which countries from WHO data aren't present in wdi table
 combined_wdi <- left_join(countries_who, wdi_filtered_countries, by = "country_code", suffix = c("_who", "_wdi"))
 
 # filter rows where content differs
@@ -197,4 +197,11 @@ na_rows_wdi <- wdi_wide_y[apply(wdi_wide_y, 1, function(x) mean(is.na(x))) > 0.7
 wdi_wide <- remove_empty(wdi_wide_y, which = "cols", cutoff = 0.8, quiet = FALSE)
 
 # -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
-# this is a test, sending changes directly from RStudio
+## QUESTÃO GBR
+#It was identified that the `cs_rates` dataset has multiple country values for the same country code GBR, #representing the different regions: England, Northern Ireland, Scotland and Wales. Seeing as the values in the #`wdi` dataset represent the United Kingdom as a whole, it was decided that we would use an average of the #different region values as the final value as input for the model:
+#  
+#  ```{r}
+## create column with coverage year duration
+#test <- cs_rates %>% 
+#  mutate(cov_duration = coverage_end_year - coverage_start_year)
+#```
