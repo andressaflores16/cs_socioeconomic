@@ -1,5 +1,6 @@
 # Instalação de pacotes
-pacotes <- c('tidyverse',  # Pacote básico de datawrangling
+pacotes <- c('rmarkdown',
+             'tidyverse',  # Pacote básico de datawrangling
              'rpart',      # Biblioteca de árvores
              'gtools',     # funções auxiliares como quantcut,
              'Rmisc',      # carrega a função sumarySE para a descritiva
@@ -7,7 +8,11 @@ pacotes <- c('tidyverse',  # Pacote básico de datawrangling
              'caret',      # Funções úteis para machine learning
              'plotROC',    # aula Random Forest, curva ROC?
              'janitor',    # limpeza de dados
-             'Boruta'      # algoritmo de feature selection
+             'Boruta',     # algoritmo de feature selection
+             'kableExtra',  # formatação tabelas
+             'gt',
+             'DT',
+             'data.table'
              
 )
 
