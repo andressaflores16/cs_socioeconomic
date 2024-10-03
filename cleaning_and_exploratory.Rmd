@@ -15,18 +15,23 @@ source("./packages.R") # install & load packages
 
 First we need to load the data that will be used. In the original project 3 data sets were chosen: World Development Indicators (WDI), Health Equity and Financial Protection Indicators (HEFPI) and Health Nutrition and Population Statistics (HNPS).\
 However, this totals to 2262 variables available, and considering that there are many years of data available, it would all be too much to handle. I've chosen to stick to WDI data set first, and see if I can incorporate the other data sets later in the analysis, to gain further insights.\
-Below, previews of the two data sets that will be merged to compose the final input data set. They are in long format (CHECK). First, we have the dataset from the World Health Organization research team regarding caesarean section rates worldwide:
+Below, previews of the two data sets that will be merged to compose the final input data set. First, we have the dataset from the World Health Organization research team regarding caesarean section rates worldwide:
 
 ```{r, load-1}
 cs_section_rates_raw <- read_csv("BETRAN2018_dados_v2.csv", col_names = TRUE, col_types = cols(
   "ISO Code" = col_character(),
-  Country = col_character(),
+  "Country" = col_character(),
   "Coverage start year" = col_integer(),
   "Coverage end year" = col_integer(),
   "Caesarean section rate (%)" = col_double()
 ))
-  
-glimpse(cs_section_rates_raw)
+
+cs_rates <- cs_section_rates_raw %>%
+  clean_names() %>%
+  dplyr::rename(country_code = 1,
+         cs_section_rate = 5)
+
+glimpse(cs_rates)
 ```
 
 When checking for the parsing error, we can see that it's only one line and it's essentially a missing value, so we'll just leave as is for now and filter these values later:
@@ -45,272 +50,320 @@ world_develop_indic_raw <- read_csv("dados/WDI_CSV/WDIData.csv", col_types = col
   "Indicator Code" = col_character()
 ))
 
-glimpse(world_develop_indic_raw)
-```
-
-We can also see that the `wdi` dataset has many NA values, so it probably has a lot of completely empty columns and/or rows. We will remove them from both datasets and check how many rows/cols are left:
-
-```{r eval=FALSE, include=FALSE}
-# removing empty columns from cs section rate data (dependent variable)
-cs_rates <- cs_section_rates_raw %>%
-  purrr::discard(~ all(is.na(.)))
-# removing empty rows
-cs_rates <- cs_rates %>%
-  filter(if_all(everything(), ~ !is.na(.))) # 
-# getting the # of rows and cols to compare w/raw data
-rows_cs <- nrow(cs_rates)
-cols_cs <- ncol(cs_rates)
-
-# same for wdi world bank data set (independent variables)
 wdi <- world_develop_indic_raw %>%
-  purrr::discard(~ all(is.na(.)))
-# removing empty rows
-wdi <- wdi %>%
-  filter(if_all(everything(), ~ !is.na(.)))
-# getting the of rows and cols to compare w/raw data
-rows_wdi <- nrow(wdi)
-cols_wdi <- ncol(wdi)
-# output number of rows and cols of each data set
-cat("# of rows cs_rates Before | After: 2024 |", rows_cs, "\n# of columns cs_rates Before | After: 5 |", cols_cs, "\n")
-cat("# of rows wdi Before | After: 395,276 |", rows_wdi, "\n# of columns wdi Before | After: 68 |", cols_wdi, "\n")
-```
-
-```{r, remove-empty-reviewed}
-# Function to clean dataset
-clean_dataset <- function(df) {
-  df %>%
-    select(where(~!all(is.na(.)))) %>%  # Remove empty columns
-    filter(if_all(everything(), ~!is.na(.)))  # Remove empty rows
-}
-
-# Function to create comparison table as a formatted data frame
-create_comparison_table <- function(datasets) {
-  comparison_data <- lapply(names(datasets), function(name) {
-    ds <- datasets[[name]]
-    data.frame(
-      dataset = name,
-      rows_before = nrow(ds$original),
-      rows_after = nrow(ds$cleaned),
-      cols_before = ncol(ds$original),
-      cols_after = ncol(ds$cleaned),
-      rows_retained = round((nrow(ds$cleaned) / nrow(ds$original)) * 100, 2),
-      cols_retained = round((ncol(ds$cleaned) / ncol(ds$original)) * 100, 2)
-    )
-  })
-  
-  do.call(rbind, comparison_data)
-}
-
-# Clean datasets
-cs_rates_cleaned <- clean_dataset(cs_section_rates_raw)
-wdi_cleaned <- clean_dataset(world_develop_indic_raw)
-
-# Create list of datasets
-datasets <- list(
-  "CS rates" = list(original = cs_section_rates_raw, cleaned = cs_rates_cleaned),
-  "WDI" = list(original = world_develop_indic_raw, cleaned = wdi_cleaned)
-)
-
-# Generate and print the comparison table
-comparison_table <- create_comparison_table(datasets)
-
-# formatting output table
-gt(comparison_table) %>%
-  fmt_number(columns = c("rows_retained", "cols_retained"), decimals = 2) %>%
-  tab_style(
-    style = cell_borders(sides = "all", color = "black", weight = px(1)),
-    locations = cells_body()
-  ) %>%
-  tab_options(
-    column_labels.background.color = "lightgray",
-    table.border.top.width = px(3),
-    table.border.top.color = "black",
-    table.border.bottom.color = "black",
-    table.border.bottom.width = px(3),
-    column_labels.border.top.width = px(3),
-    column_labels.border.top.color = "black",
-    column_labels.border.bottom.width = px(3),
-    column_labels.border.bottom.color = "black"
-  )
-rm(datasets)
-```
-
-As we can see, the cs section rates data set had only one line removed, the one which showed up in the parsing error. In comparison, the `wdi` set changed a lot, as it had more than 100,000 empty rows which where successfully removed. Only one column was removed. We will later check the number of NAs remaining in the non empty columns/rows.
-
-Now we'll rename the columns so they are easier to work with in the code:
-
-```{r, rename-reorder-init-dbs, results="hide", warning=FALSE}
-wdi <- wdi_cleaned %>%
   dplyr::rename(country = 1,
          country_code = 2, 
          indicator_name = 3,
          indicator_code = 4)
 
-cs_rates <- cs_rates_cleaned %>%
-  dplyr::rename(country_code = 1,
-         country = 2,
-         coverage_start_year = 3,
-         coverage_end_year = 4,
-         cs_section_rate = 5)
-
 # reorder the columns
-cs_rates <- cs_rates %>% relocate(country, .before = country_code)
-```
+wdi <- wdi %>% relocate(country_code, .before = country)
 
-Let's check if our changes occurred successfully:
-
-```{r, glimpse-1}
-glimpse(cs_rates)
 glimpse(wdi)
 ```
 
-It seems like all the columns full of NAs have been removed from de `wdi` dataset, and also the column names have been successfully changed and reordered. We will now remove any duplicate rows from both datasets:
+We can also see that the WDI dataset has many NA values, so it probably has a lot of empty rows and/or columns 
+Let's check how many NA values are present in the columns:
 
-```{r, remove-dupes-1}
-# adding an id for each row
-cs_rates_id <- cs_rates %>%
-  dplyr::mutate(row_id = row_number())
-
-cs_removed_dupes <- cs_rates_id %>%
-  distinct() %>%
-  anti_join(cs_rates_id, by = "row_id")
-print(cs_removed_dupes)
-
-# adding an id for each row
-wdi_id <- wdi %>%
-  dplyr::mutate(row_id = row_number())
-
-wdi_removed_dupes <- wdi_id %>%
-  distinct() %>%
-  anti_join(wdi_id, by = "row_id")
-print(wdi_removed_dupes)
-
-rm(cs_rates_id, cs_removed_dupes, wdi_id, wdi_removed_dupes)
-gc()
-```
-
-Apparently everything is in order. The `removed_dupes` dataframes have 0 lines, meaning that there weren't any duplicated rows to remove. Let's do one final check to see how much data is missing from the `wdi` dataset, which is the bigger and most problematic of our datasets.
-
-```{r, missing-values-1}
+```{r, check-empty-columns}
 # missing percentage per column
-sapply(wdi, function(x) sum(is.na(x)) / length(x) * 100)
+na_check_wdi <- sapply(wdi, function(x) sum(is.na(x)) / length(x) * 100)
+print("Percentage of NA values in `wdi` columns:")
+print(na_check_wdi)
 
 # value counts to check if there aren't any empty values aside from NA
 # Check for empty strings or other potential "missing" values
-empty_check <- sapply(wdi, function(x) sum(x == "" | x == " ") / length(x) * 100)
-print("Percentage of empty strings in original dataset:")
-print(empty_check)
+empty_check_wdi <- sapply(wdi, function(x) sum(x == "" | x == " ", na.rm = TRUE) / length(x) * 100)
+print("Percentage of empty strings in `wdi` columns:")
+print(empty_check_wdi)
+
+#---
+cat("\n")
+
+# missing percentage per column
+na_check_cs_rates <- sapply(cs_rates, function(x) sum(is.na(x)) / length(x) * 100)
+print("Percentage of NA values in `cs_rates` columns:")
+print(na_check_cs_rates)
+
+# value counts to check if there aren't any empty values aside from NA
+# Check for empty strings or other potential "missing" values
+empty_check_cs_rates <- sapply(cs_rates, function(x) sum(x == "" | x == " ", na.rm = TRUE) / length(x) * 100)
+print("Percentage of empty strings in `cs_rates` columns:")
+print(empty_check_cs_rates)
 ```
 
-It seems like we removed all of the rows which had missing values. Most likely the empty rows represented the countries which have more problems with gathering/communicating data. Depending on future results, we can come back to this and understand which countries are missing and if it's possible to impute some data.
+We have a lot of missing values in our WDI dataset, mainly in the columns which represent data from the 1960s and 1970s. The WHO dataset on the other hand, has practically no NA values. A threshold of 80% of NA values was chosen for the removal of any rows and columns from the datasets, first for the WDI World Bank dataset:
 
-Another thing we must pay attention to is the year range that will be included in the final input dataset of the model. Considering the target variable as `cs_section_rate` from the `cs_rates` dataset, its year coverage will determine which years of the `wdi` dataset will be filtered:
+```{r, remove-empty-wdi}
+# Removing columns with more than 80% NA values
+cleaned_wdi <- wdi %>%
+  remove_empty(which = "cols", cutoff = 0.2, quiet = FALSE)
+
+# Then, remove rows with more than 80% NA values
+cleaned_wdi <- cleaned_wdi %>%
+  remove_empty(which = "rows", cutoff = 0.2, quiet = FALSE)
+
+cat("\n")
+# Print dimensions of the original and cleaned dataset
+cat("Dimensions of the original dataset:", dim(wdi), "\n")
+cat("Dimensions of the cleaned dataset:", dim(cleaned_wdi), "\n")
+
+# Calculate the number of rows and columns removed
+rows_removed <- nrow(wdi) - nrow(cleaned_wdi)
+cols_removed <- ncol(wdi) - ncol(cleaned_wdi)
+
+cat("Number of rows removed:", rows_removed, "\n")
+cat("Number of columns removed:", cols_removed, "\n")
+
+# If you want to see which columns were removed
+removed_cols <- setdiff(names(wdi), names(cleaned_wdi))
+cat("Removed columns:", paste(removed_cols, collapse = ", "), "\n")
+cat("\n")
+glimpse(cleaned_wdi)
+```
+The `wdi` dataset is looking much better, although it still has a few consecutive NA values. Depending on our model performance, we can consider imputation for these gaps, but our model algorithm of choice, Random Forest, usually deals well a few NA values.
+
+Now to do the same cleaning steps for the `cs_rates` dataset:
+
+```{r, remove-empty-csrates}
+# Removing columns with more than 80% NA values
+cleaned_cs_rates <- cs_rates %>%
+  remove_empty(which = "cols", cutoff = 0.2, quiet = FALSE)
+
+# Then, remove rows with more than 80% NA values
+cleaned_cs_rates <- cleaned_cs_rates %>%
+  remove_empty(which = "rows", cutoff = 0.2, quiet = FALSE)
+
+cat("\n")
+# Print dimensions of the original and cleaned dataset
+cat("Dimensions of the original dataset:", dim(cs_rates), "\n")
+cat("Dimensions of the cleaned dataset:", dim(cleaned_cs_rates), "\n")
+rm(cleaned_cs_rates, cols_removed, rows_removed, removed_cols)
+```
+
+As we can see, `cs_rates` had no lines or columns removed. 
+
+Considering that the main objective for this section of the project is to merge the WDI dataset with the WHO caesarean section rates dataset, we must keep only the data from years that are present in both datasets. This will most likely exclude the majority of the older columns of data from the `wdi`, as the year range for the `cs_rates` is smaller. Let's check the year range of both datasets and keep only the intersecting years:
 
 ```{r, years-covered}
 # checking range of years included in cs_rates
 cs_min_year <- min(cs_rates$coverage_start_year)
 cs_max_year <- max(cs_rates$coverage_end_year)
-cat("The range of years is between", cs_min_year, "and", cs_max_year)
+cat("The range of years of `cs_rates` is between", cs_min_year, "and", cs_max_year)
+cat("\n")
+wdi_columns <- colnames(cleaned_wdi)
+wdi_range <- wdi_columns[5:length(wdi_columns)]
+wdi_min_year <- min(wdi_range)
+wdi_max_year <- max(wdi_range)
+cat("The range of years of `wdi` is between", wdi_min_year, "and", wdi_max_year)
 ```
-
-This means that we can filter out all columns that are not contemplated in this range from the `wdi` dataset, seeing as anything outside this range won't be possible to merge with the `cs_rates` dataset:
 
 ```{r, removing-years-wdi}
 years_to_keep <- as.character(cs_min_year:cs_max_year)
 
 # selects columns that are not named w/4 digits OR if it's in years_to_keep vector
-wdi <- wdi %>%
+cleaned_wdi <- cleaned_wdi %>%
  select(!matches("^\\d{4}$") | all_of(years_to_keep))
-
-glimpse(wdi)
 ```
 
-Now, we will begin filtering the datasets so we can merge them together without inconsistencies. First, we need to check country names and country codes, which are our most important identifiers. Since both datasets are from different sources, we need to make them compatible:
+
+Let's check if our changes occurred successfully:
+
+```{r, glimpse-1}
+glimpse(cs_rates)
+glimpse(cleaned_wdi)
+```
+We will now remove any duplicate rows from both datasets:
+
+```{r, remove-dupes-csrates}
+# For cs_rates
+cs_rates_dupes <- get_dupes(cs_rates)
+cat("Duplicate rows - `cs_rates`: \n")
+print(cs_rates_dupes)
+cleaned_cs_rates <- distinct(cs_rates)
+```
+
+```{r, remove-dupes-wdi}
+# For wdi
+wdi_dupes <- get_dupes(cleaned_wdi)
+cat("Duplicate rows - `cleaned_wdi`: \n")
+print(wdi_dupes)
+```
+
+There were 8 duplicated lines in `cs_rates` dataset that were removed, generating `cleaned_cs_rates`. There were no duplicates in the `cleaned_wdi` dataset.
+
+Now, we will begin filtering the datasets so we can merge them together without inconsistencies. First, we need to check country names and country codes, which are our most important identifiers. Since both datasets are from different sources, we need to make them compatible, if there are any differences:
 
 ```{r, filtering-by-countries-1}
-# typo found in one of the country codes in WHO data (VEM instead of VEN, representing Venezuela), correction
-cs_rates <- cs_rates %>%
+# countries in cs_rates (to filter WDI dataset, which has a much larger coverage of countries)
+countries_cs <- cleaned_cs_rates %>%
+  select(country_code, country) %>%
+  distinct()
+#print(countries_cs)
+
+# doing the same for WHO dataset
+countries_wdi <- cleaned_wdi %>%
+  select(country_code, country) %>%
+  distinct()
+#print(countries_wdi)
+
+# left join to find differences between dfs
+country_diffs <- countries_cs %>%
+  left_join(countries_wdi, by = "country_code", suffix = c("_cs", "_wdi"))
+print(country_diffs)
+```
+We can see 2 main inconsistencies (aside from the slightly different country names). Firstly, the GBR `country_code` from `wdi` matches with 4 different country names in `cs_rates`: United Kingdom-England, United Kingdom-Northern Ireland, United Kingdom-Scotland and United Kingdom-Wales. Secondly, the `country_code` VEM for Venezuela in `cs_rates` doesn't match any countries in `wdi`, as this isn't the correct code for Venezuela (most probably a typo). We must correct the Venezuela country code, filter `cleaned_wdi` with the country list from `countries_cs` and remove the GBR observations (EXPLAIN):
+
+```{r, filtering-by-countries-2}
+# correct Venezuela country code
+cleaned_cs_rates <- cleaned_cs_rates %>%
   mutate(country_code = if_else(country_code == "VEM", "VEN", country_code))
 
-# countries in (Betran, 2018) WHO study (cs_rates) to filter WDI dataset, which has a much larger coverage of countries
-countries_who <- cs_rates %>%
+# regenerate countries_cs with correction 
+countries_cs <- cleaned_cs_rates %>%
   select(country_code, country) %>%
   distinct()
 
 # filter using country codes from cs_rates
-wdi_who <- wdi %>%
-  filter(country_code %in% countries_who$country_code)
+wdi_countries_cs <- cleaned_wdi %>%
+  filter(country_code %in% countries_cs$country_code)
 
-# checking which countries in cs_rates are available in wdi
-wdi_filt_cs <- wdi_who %>%
+# removing observations from GBR
+wdi_countries_cs <- wdi_countries_cs %>%
+  filter(country_code != "GBR")
+
+# checking which countries will be included in final analysis 
+countries_included <- wdi_countries_cs %>%
   select(country_code, country) %>%
   distinct()
 
-# left join to find differences between dfs
-combined_wdi <- countries_who %>%
-  left_join(wdi_filt_cs, by = "country_code", suffix = c("_who", "_wdi"))
-
-#datatable(combined_wdi, 
-#          options = list(pageLength = 10, 
-#                         scrollX = TRUE, 
-#                         scrollY = "300px"))
-print(combined_wdi)
+print(countries_included)
 ```
 
-The table above represents all the countries that will be contemplated by the analysis, which are the ones with matching country codes in both datasets. Considering that one error was already found in a country code in the `cs_rates` dataset, each country code was checked manually/visually, using an open database online. No other errors were found, only slight differences in country names. Regarding the multiple `country` values for the GBR `country_code`, all GBR entries will be removed from analysis for now:
+The table above represents all the countries that will be contemplated by the analysis, which are the ones with matching country codes in both datasets. Considering that one error was already found in a country code in the `cs_rates` dataset, each country code was checked manually/visually using an open database online. No other errors were found.
 
-```{r, minus-gbr}
-# removing observations from GBR
-wdi_who_mgb <- wdi_who %>%
-  filter(country_code != "GBR")
-```
-
-Let's check the current state of our datasets:
-```{r eval=FALSE, include=FALSE}
-datatable(cs_rates, 
-          options = list(pageLength = 10, 
-                         scrollX = TRUE, 
-                         scrollY = "300px"))
-
-datatable(wdi_who_mgb, 
-          options = list(pageLength = 10, 
-                         scrollX = TRUE, 
-                         scrollY = "300px"))
-```
+Let's check the current state of our main datasets:
 
 ```{r, preview-data-1}
-glimpse(cs_rates)
-glimpse(wdi_who_mgb)
-summary(cs_rates)
+glimpse(cleaned_cs_rates)
+cat("\n")
+glimpse(wdi_countries_cs)
+cat("\n")
+summary(cleaned_cs_rates)
 ```
-
-Observing the `wdi` dataset, we can see that we have each line representing a unique combination of `country` and indicator, and each column (aside the identifier columns) represents a given year and the respective value for each indicator in that year. This indicates a wide format dataset, as the different measurements of the same variable (indicator) are spread out across different columns (multiple observations: years). We need to convert it to a long format, which takes the `year` column names and converts them to values in a new column `years`, so that it's possible to merge with `cs_rates`, which is also in long format (`year, cs_section_rate` columns). Our unit of analysis becomes the combination of `country` and `year` in both datasets. 
-
 ## Pivoting and merging data
 
-Our main objective in this analysis is to identify which World Development Indicators (socioeconomic indicators) are associated with the rise in caesarean section rates worldwide observed in the WHO study, and use these indicators to predict caesarean section rates. Identifying these indicators may help direct future studies and influence policy-making. This means that our main variables of interest (features) are the different indicators obtained from `wdi`. This means we need to transform the data from the original wide to long, and then to another type of wide, so that each indicator has its own column, but we still leave the `country` and `year` columns long, for merging, as explained previously.
+Observing the `wdi_countries_cs` dataset, we can see that we have each line representing a unique combination of `country` and indicator, and each column (aside the identifier columns) represents a given year and the respective value for each indicator in that year. This indicates a wide format dataset, as the different measurements of the same variable (indicator) are spread out across different columns (multiple observations: years).
+
+For our subsequent steps of analysis, we need to convert `wdi_countries_cs` to a long format, which takes the `year` column names and converts them to values in a new column `years`, and then back to a wide format, converting `indicator_code` values into column names, with all the values for that indicator in the same column. As a result, our unit of analysis becomes the combination of `country` and `year` in both datasets. 
+
+Our main objective in this analysis is to identify which World Development Indicators (socioeconomic indicators) are associated with the rise in caesarean section rates worldwide collected in the WHO study. These indicators can then be used to predict caesarean section rates for countries that don't have this type of data available. Identifying these indicators may also help direct future studies which aim to explain what influences the rise of caesarean section rates world and subsequently influence policy-making. 
+
+Therefore, our main variables of interest (features) are the different indicators obtained from `wdi_countries_cs`. This means we need to transform the data from the original wide to long, and then to another type of wide, so that each indicator has its own column, but we still leave the `country` and `year` columns long, for the merging of our datasets, as explained previously.
 
 ```{r, pivot-wdi}
 # Convert to data.table for faster processing
-setDT(wdi_who_mgb)
+setDT(wdi_countries_cs)
 
 # Melt to long format
-wdi_long <- melt(wdi_who_mgb, id.vars = c("country", "country_code", "indicator_code", "indicator_name"), 
+wdi_long <- melt(wdi_countries_cs, id.vars = c("country_code", "country", "indicator_code", "indicator_name"), 
                  variable.name = "year", value.name = "value")
 
 # Convert year to integer
 wdi_long[, year := as.integer(as.character(year))]
 
 # If you need wide format for some analyses:
-wdi_wide <- dcast(wdi_long, country + country_code + year ~ indicator_code, value.var = "value")
+wdi_wide <- dcast(wdi_long, country_code + country + year ~ indicator_code, value.var = "value")
 
 glimpse(wdi_long)
+cat("\n")
 glimpse(wdi_wide)
 ```
 
-Our two new formats of `wdi` show a typical contrast between long and wide datasets, which many rows in the long format and many columns and in the wide format. In regards to `wdi_wide`, we can see that many consecutive NAs values have been introduced into the dataset. This probably happened when we transferred the `indicator_code` to the column names, which may mean that there are certain countries which don't have values for all 277 indicators available. Let's check how many unique indicators are available in the `wdi_long` dataset first:
+Our two new formats of `wdi` show a typical contrast between long and wide datasets, which many rows in the long format and many columns and in the wide format. In regards to `wdi_wide`, we can see that many consecutive NAs values have been introduced into the dataset. This probably happened when we transferred the `indicator_code` to the column names, which may mean that there are certain countries which don't have values for all indicators available. Let's check how many unique indicators are available in the `wdi_long` dataset first:
 
-```{r, unique-indicators}
+```{r, unique-indicators-1}
+unique_indicators <- wdi_long %>%
+  select(indicator_code, indicator_name) %>%
+  distinct()
+print(unique_indicators)
+```
 
+There are 1357 unique indicators available in the WDI dataset. There are probably no countries that have values for all indicators, but let's check how many indicators we have per country:
+
+```{r eval=FALSE, include=FALSE}
+
+wdi_dt <- as.data.table(wdi_wide)
+
+# Identify indicator columns
+indicator_cols <- setdiff(names(wdi_dt), c("country_code", "country", "year"))
+
+# Count unique non-NA indicators for each country
+indicator_counts <- wdi_dt[, lapply(.SD, function(x) any(!is.na(x))), 
+                           by = .(country, country_code), 
+                           .SDcols = indicator_cols
+                          ][, unique_indicator_count := rowSums(.SD), 
+                            .SDcols = indicator_cols
+                           ][, c("country", "country_code", "unique_indicator_count"), with = FALSE
+                           ][order(-unique_indicator_count)]
+
+# Print the first and last 10 rows
+print(head(indicator_counts, 10))
+print(tail(indicator_counts, 10))
+
+# Save to CSV
+fwrite(indicator_counts, "unique_indicator_counts_by_country.csv")
+
+# Summary statistics
+summary_stats <- list(
+  total_countries = uniqueN(wdi_dt$country),
+  total_indicators = length(indicator_cols),
+  max_indicators = max(indicator_counts$unique_indicator_count),
+  min_indicators = min(indicator_counts$unique_indicator_count),
+  mean_indicators = mean(indicator_counts$unique_indicator_count),
+  median_indicators = median(indicator_counts$unique_indicator_count)
+)
+
+# Print summary statistics
+cat("\nSummary Statistics:\n")
+cat("Total number of countries:", summary_stats$total_countries, "\n")
+cat("Total number of unique indicators:", summary_stats$total_indicators, "\n")
+cat("Maximum number of unique indicators available for a country:", summary_stats$max_indicators, "\n")
+cat("Minimum number of unique indicators available for a country:", summary_stats$min_indicators, "\n")
+cat("Mean number of unique indicators available per country:", round(summary_stats$mean_indicators, 2), "\n")
+cat("Median number of unique indicators available per country:", summary_stats$median_indicators, "\n")
+```
+
+Let's check if there are any indicators with no values, in other words, any empty columns:
+
+```{r, remove-empty-2}
+wdi_wide <- wdi_wide %>%
+  remove_empty(which = "cols", quiet = FALSE)
+```
+
+All indicators have at least one value available. If our model doesn't perform well, we can consider removing the indicators with mostly NA values (80%-90%).
+
+### Expansion
+The final step before the merging of our two main datasets, `cleaned_cs_rates` and `wdi_wide`, is expansion. The `cleaned_cs_rates` dataset has two columns of years, a start year column and end year column. This means there are feature values which are representative a number of years rather than a single year,  as opposed to `wdi_wide` which has yearly feature values. Therefore, in order to be able to merge the two datasets for target variable prediction, we must transform `cleaned_cs_rates` so that each year had a specific target variable value. 
+
+In order to avoid removing valuable data from `cleaned_cs_rates`, we will expand the dataset so that there is only one year column, with one year being represented per row. The value of the target variable will be repeated for year ranges with more than one year, and for each new row, a weight will be calculated, so that rows with values that correspond to a single year will have more importance compared to values originated from a large year range.
+
+```{r, csrates-expansion}
+cs_rates_expanded <- cleaned_cs_rates %>%
+  rowwise() %>%
+  do(data.frame(
+    country_code = .$country_code,
+    country = .$country,
+    year = seq(.$coverage_start_year, .$coverage_end_year),
+    cs_section_rate = .$cs_section_rate,
+    weight = 1 / (.$coverage_end_year - .$coverage_start_year + 1)  
+  ))
+
+glimpse(cs_rates_expanded)
+```
+
+```{r, merge}
+merged_cs_wdi <- merge(wdi_wide, cs_rates_expanded, by = c("country_code", "year"))
+glimpse(merged_cs_wdi)
 ```
 

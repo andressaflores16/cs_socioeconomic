@@ -1,5 +1,6 @@
 # Instalação de pacotes
 pacotes <- c('rmarkdown',
+             'knitr',
              'tidyverse',  # Pacote básico de datawrangling
              'rpart',      # Biblioteca de árvores
              'gtools',     # funções auxiliares como quantcut,
@@ -12,8 +13,11 @@ pacotes <- c('rmarkdown',
              'kableExtra',  # formatação tabelas
              'gt',
              'DT',
-             'data.table'
-             
+             'data.table',
+             'styler',
+             'dtplyr',
+             'ranger',
+             'DataExplorer'
 )
 
 # Conferir quais pacotes ja estão instalados e carregar
