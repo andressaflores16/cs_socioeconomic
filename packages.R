@@ -1,5 +1,6 @@
 # Instalação de pacotes
 pacotes <- c('rmarkdown',
+             'devtools',
              'knitr',
              'tidyverse',  # Pacote básico de datawrangling
              'rpart',      # Biblioteca de árvores
@@ -17,7 +18,9 @@ pacotes <- c('rmarkdown',
              'styler',
              'dtplyr',
              'ranger',
-             'DataExplorer'
+             'DataExplorer',
+             'missForest',
+             'randomForest'
 )
 
 # Conferir quais pacotes ja estão instalados e carregar

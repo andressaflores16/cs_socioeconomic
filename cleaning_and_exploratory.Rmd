@@ -62,8 +62,7 @@ wdi <- wdi %>% relocate(country_code, .before = country)
 glimpse(wdi)
 ```
 
-We can also see that the WDI dataset has many NA values, so it probably has a lot of empty rows and/or columns 
-Let's check how many NA values are present in the columns:
+We can also see that the WDI dataset has many NA values, so it probably has a lot of empty rows and/or columns Let's check how many NA values are present in the columns:
 
 ```{r, check-empty-columns}
 # missing percentage per column
@@ -121,6 +120,7 @@ cat("Removed columns:", paste(removed_cols, collapse = ", "), "\n")
 cat("\n")
 glimpse(cleaned_wdi)
 ```
+
 The `wdi` dataset is looking much better, although it still has a few consecutive NA values. Depending on our model performance, we can consider imputation for these gaps, but our model algorithm of choice, Random Forest, usually deals well a few NA values.
 
 Now to do the same cleaning steps for the `cs_rates` dataset:
@@ -141,7 +141,7 @@ cat("Dimensions of the cleaned dataset:", dim(cleaned_cs_rates), "\n")
 rm(cleaned_cs_rates, cols_removed, rows_removed, removed_cols)
 ```
 
-As we can see, `cs_rates` had no lines or columns removed. 
+As we can see, `cs_rates` had no lines or columns removed.
 
 Considering that the main objective for this section of the project is to merge the WDI dataset with the WHO caesarean section rates dataset, we must keep only the data from years that are present in both datasets. This will most likely exclude the majority of the older columns of data from the `wdi`, as the year range for the `cs_rates` is smaller. Let's check the year range of both datasets and keep only the intersecting years:
 
@@ -166,13 +166,13 @@ cleaned_wdi <- cleaned_wdi %>%
  select(!matches("^\\d{4}$") | all_of(years_to_keep))
 ```
 
-
 Let's check if our changes occurred successfully:
 
 ```{r, glimpse-1}
 glimpse(cs_rates)
 glimpse(cleaned_wdi)
 ```
+
 We will now remove any duplicate rows from both datasets:
 
 ```{r, remove-dupes-csrates}
@@ -212,6 +212,7 @@ country_diffs <- countries_cs %>%
   left_join(countries_wdi, by = "country_code", suffix = c("_cs", "_wdi"))
 print(country_diffs)
 ```
+
 We can see 2 main inconsistencies (aside from the slightly different country names). Firstly, the GBR `country_code` from `wdi` matches with 4 different country names in `cs_rates`: United Kingdom-England, United Kingdom-Northern Ireland, United Kingdom-Scotland and United Kingdom-Wales. Secondly, the `country_code` VEM for Venezuela in `cs_rates` doesn't match any countries in `wdi`, as this isn't the correct code for Venezuela (most probably a typo). We must correct the Venezuela country code, filter `cleaned_wdi` with the country list from `countries_cs` and remove the GBR observations (EXPLAIN):
 
 ```{r, filtering-by-countries-2}
@@ -251,13 +252,14 @@ glimpse(wdi_countries_cs)
 cat("\n")
 summary(cleaned_cs_rates)
 ```
+
 ## Pivoting and merging data
 
 Observing the `wdi_countries_cs` dataset, we can see that we have each line representing a unique combination of `country` and indicator, and each column (aside the identifier columns) represents a given year and the respective value for each indicator in that year. This indicates a wide format dataset, as the different measurements of the same variable (indicator) are spread out across different columns (multiple observations: years).
 
-For our subsequent steps of analysis, we need to convert `wdi_countries_cs` to a long format, which takes the `year` column names and converts them to values in a new column `years`, and then back to a wide format, converting `indicator_code` values into column names, with all the values for that indicator in the same column. As a result, our unit of analysis becomes the combination of `country` and `year` in both datasets. 
+For our subsequent steps of analysis, we need to convert `wdi_countries_cs` to a long format, which takes the `year` column names and converts them to values in a new column `years`, and then back to a wide format, converting `indicator_code` values into column names, with all the values for that indicator in the same column. As a result, our unit of analysis becomes the combination of `country` and `year` in both datasets.
 
-Our main objective in this analysis is to identify which World Development Indicators (socioeconomic indicators) are associated with the rise in caesarean section rates worldwide collected in the WHO study. These indicators can then be used to predict caesarean section rates for countries that don't have this type of data available. Identifying these indicators may also help direct future studies which aim to explain what influences the rise of caesarean section rates world and subsequently influence policy-making. 
+Our main objective in this analysis is to identify which World Development Indicators (socioeconomic indicators) are associated with the rise in caesarean section rates worldwide collected in the WHO study. These indicators can then be used to predict caesarean section rates for countries that don't have this type of data available. Identifying these indicators may also help direct future studies which aim to explain what influences the rise of caesarean section rates world and subsequently influence policy-making.
 
 Therefore, our main variables of interest (features) are the different indicators obtained from `wdi_countries_cs`. This means we need to transform the data from the original wide to long, and then to another type of wide, so that each indicator has its own column, but we still leave the `country` and `year` columns long, for the merging of our datasets, as explained previously.
 
@@ -344,7 +346,8 @@ wdi_wide <- wdi_wide %>%
 All indicators have at least one value available. If our model doesn't perform well, we can consider removing the indicators with mostly NA values (80%-90%).
 
 ### Expansion
-The final step before the merging of our two main datasets, `cleaned_cs_rates` and `wdi_wide`, is expansion. The `cleaned_cs_rates` dataset has two columns of years, a start year column and end year column. This means there are feature values which are representative a number of years rather than a single year,  as opposed to `wdi_wide` which has yearly feature values. Therefore, in order to be able to merge the two datasets for target variable prediction, we must transform `cleaned_cs_rates` so that each year had a specific target variable value. 
+
+The final step before the merging of our two main datasets, `cleaned_cs_rates` and `wdi_wide`, is expansion. The `cleaned_cs_rates` dataset has two columns of years, a start year column and end year column. This means there are feature values which are representative a number of years rather than a single year, as opposed to `wdi_wide` which has yearly feature values. Therefore, in order to be able to merge the two datasets for target variable prediction, we must transform `cleaned_cs_rates` so that each year had a specific target variable value.
 
 In order to avoid removing valuable data from `cleaned_cs_rates`, we will expand the dataset so that there is only one year column, with one year being represented per row. The value of the target variable will be repeated for year ranges with more than one year, and for each new row, a weight will be calculated, so that rows with values that correspond to a single year will have more importance compared to values originated from a large year range.
 
@@ -367,3 +370,55 @@ merged_cs_wdi <- merge(wdi_wide, cs_rates_expanded, by = c("country_code", "year
 glimpse(merged_cs_wdi)
 ```
 
+We finally have our input dataset for the predictive model. However, because our dataset is so large (3860 obs. of 1363 variables) one thing that could be useful is to batch/group our observations according to a categorical variable. This way, we can analyse different groups of countries at a time, breaking up the processing tasks in chunks. We have some complimentary metadata from World Bank regarding the WDI dataset that may be useful:
+
+```{r, load-3}
+country_metadata_wdi <- read_csv("dados/WDI_CSV/WDICountry.csv", col_select = c(1, 3, 8, 9), col_types = cols(
+  "Country Code" = col_character(),
+  "Table Name" = col_character(),
+  "Region" = col_character(),
+  "Income Group" = col_character()
+))
+
+country_metadata_wdi <- country_metadata_wdi %>%
+  clean_names() %>%
+  dplyr::rename(country = 2)
+
+glimpse(country_metadata_wdi)
+```
+
+Now we'll do a left join so that we add the metadata to our main dataset (and also do some cleaning up e.g. reordering of columns):
+
+```{r, merge-metadata-1}
+cs_wdi <- merged_cs_wdi %>%
+  left_join(country_metadata_wdi, by = c("country_code" = "country_code")) %>%
+  select(-country.x, -country.y) %>%
+  relocate(cs_section_rate:income_group, .before = year) %>%
+  relocate(country, .before = cs_section_rate) %>%
+  relocate(weight, .before = cs_section_rate) %>%
+  relocate(weight:cs_section_rate, .after = per_si_allsi.cov_q5_tot)
+
+colnames(cs_wdi)
+write_csv(cs_wdi, "/Users/andressaflores/Documents/projects/cs_socioeconomic/dados/cs_wdi.csv")
+```
+
+We also have some metadata regarding our socioeconomic variables contemplated in columns 8:1364. Since the majority of potential features of our model are continuous variables, we're looking for categorical variables that will allow the grouping:
+
+```{r, load-4}
+indicator_metadata <- read_csv("dados/WDI_CSV/WDISeries.csv", col_select = c(1, 2, 3, 5, 6), col_types = cols(
+  "Series Code" = col_character(),
+  "Topic" = col_character(),
+  "Indicator Name" = col_character(),
+  "Long definition" = col_character(),
+  "Unit of measure" = col_character()
+))
+
+indicator_metadata <- indicator_metadata %>%
+  clean_names() %>%
+  dplyr::rename(indicator_code = 1) %>%
+  relocate(indicator_name, .before = topic)
+
+glimpse(indicator_metadata)
+```
+
+### Imputation
