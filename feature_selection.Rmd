@@ -22,6 +22,7 @@ In the previous section, we did basic data cleaning and manipulation with the ob
 data <- read_csv('/Users/andressaflores/Documents/projects/cs_socioeconomic/dados/cs_wdi.csv')
 dim(data)
 ```
+
 We can see from the output that 11 columns have been determined as col_logical(), which means that they are empty (only false values). Although the Random Forest algorithm accepts NA values in its input dataset, the feature selection algorithm only accepts them without NA values, so we will most likely have to impute remaining missing values. First, let's check how many NA values there are in our columns:
 
 ```{r, check-empty-columns}
@@ -36,6 +37,7 @@ na_long <- data.frame(
 
 print(count(na_long$na_percentage > 80))
 ```
+
 Although we previously removed empty columns and rows in the initial steps of data cleaning, there are still 212 columns which have over 80% NA. This threshold was chosen for removal, as variables with only 20% of observations will not be very informative in future steps. We will also remove some identifier columns which do not need to be input into the feature selection algorithm and transform the categorical data types:
 
 ```{r, remove-empty}
@@ -68,12 +70,12 @@ print(nzv[nzv$zeroVar | nzv$nzv, ])
 We'll remove these 4 problematic variables and try to run missForest again:
 
 ```{r}
-columns_to_remove <- c("SH.HIV.1524.FE.ZS", "SN.ITK.DEFC.ZS", "TM.TAX.TCOM.BC.ZS")
+#columns_to_remove <- c("SH.HIV.1524.FE.ZS", "SN.ITK.DEFC.ZS", "TM.TAX.TCOM.BC.ZS")
+columns_to_remove <- c("income_group")
 
 cs_wdi_cleaned <- cs_wdi_cleaned %>%
   select(-all_of(columns_to_remove))
 ```
-
 
 ```{r}
 summary_data <- data.frame(
@@ -85,7 +87,6 @@ summary_data <- data.frame(
 )
 print(summary_data)
 ```
-
 
 ```{r eval=FALSE, include=FALSE}
 # Assuming the last column is your target variable
@@ -144,5 +145,103 @@ imputed_cs_wdi <- missForest(cs_wdi_cleaned, maxiter = 10, ntree = 100, variable
                        xtrue = NA, parallelize = 'no')
 ```
 
+The output for missForest() is a list. The first item is the actual imputed dataframe and the second is the OOB imputation error estimate for each variable that was imputed. Values close to 0 mean a low error rate and 1 means a high error rate (CHECK). Variables with values close to 1 will probaly be removed. Let's check our outputs first and save our imputed dataset to a csv:
 
+```{r, imputation-results-df}
+imp_cs_wdi <- imputed_cs_wdi$ximp
+write_csv(imp_cs_wdi, "/Users/andressaflores/Documents/projects/cs_socioeconomic/dados/imputed_cs_wdi_vars.csv")
+head(imp_cs_wdi)
+tail(imp_cs_wdi)
+```
+
+At first glance, our imputation seems to have worked well. Let's now check the OOB error values to see if there are any variables that might need to be removed:
+
+```{r, imputation-results-oob-1}
+imp_oob_error <- imputed_cs_wdi$OOBerror
+print(imp_oob_error)
+```
+
+Let's save our OOB vector to a dataframe:
+
+```{r, imputation-results-oob-2}
+df_oob_error <- data.frame(as.list(imp_oob_error))
+print(df_oob_error)
+```
+
+According to the reference material regarding missForest, the NRMSE can vary between 0 and 1, with 0 being the best imputation possible and 1 being the worst. Since we have MSE [MSE measures the average squared difference between the imputed values and the actual values (for the non-missing data used to train the model)] as output, we have to convert to NRMSE, which isn't scale-dependent and allows for comparison between variables. Let's transform our values to check the quality of the imputation:
+
+```{r, convert-oob-mse}
+# Function to calculate NRMSE
+NRMSE <- function(mse, actual_values) {
+  sqrt(mse) / (max(actual_values, na.rm = TRUE) - min(actual_values, na.rm = TRUE))
+}
+
+# Initialize results vector
+results <- vector("list", length(imp_oob_error))
+names(results) <- names(imp_cs_wdi)
+
+# Process each variable
+for (i in seq_along(imp_oob_error)) {
+  var_name <- names(imp_cs_wdi)[i]
+  
+  if (i == 1) {  # First variable is categorical
+    results[[i]] <- list(
+      type = "categorical",
+      PFC = imp_oob_error[i],  # For categorical, MSE is actually PFC
+      interpretation = ifelse(imp_oob_error[i] < 0.2, "Good", 
+                       ifelse(imp_oob_error[i] < 0.4, "Moderate", "Poor"))
+    )
+  } else {  # Remaining variables are numeric
+    nrmse <- NRMSE(imp_oob_error[i], imp_cs_wdi[[var_name]])
+    results[[i]] <- list(
+      type = "numeric",
+      MSE = imp_oob_error[i],
+      NRMSE = nrmse,
+      interpretation = ifelse(nrmse < 0.3, "Good", 
+                       ifelse(nrmse < 0.5, "Moderate", "Poor"))
+    )
+  }
+}
+
+# Print summary
+#for (var_name in names(results)) {
+#  cat("\nVariable:", var_name, "\n")
+#  if (results[[var_name]]$type == "categorical") {
+#    cat("Type: Categorical\n")
+#    cat("PFC:", results[[var_name]]$PFC, "\n")
+#  } else {
+#    cat("Type: Numeric\n")
+#    cat("MSE:", results[[var_name]]$MSE, "\n")
+#    cat("NRMSE:", results[[var_name]]$NRMSE, "\n")
+#  }
+#  cat("Interpretation:", results[[var_name]]$interpretation, "\n")
+#}
+
+# Overall summary
+cat("\nOverall Summary:\n")
+cat("Good imputations:", sum(sapply(results, function(x) x$interpretation == "Good")), "\n")
+cat("Moderate imputations:", sum(sapply(results, function(x) x$interpretation == "Moderate")), "\n")
+cat("Poor imputations:", sum(sapply(results, function(x) x$interpretation == "Poor")), "\n")
+
+# Identify variables with poor imputation
+poor_vars <- names(results)[sapply(results, function(x) x$interpretation == "Poor")]
+if (length(poor_vars) > 0) {
+  cat("\nVariables with poor imputation:\n")
+  print(poor_vars)
+}
+```
+
+All of our converted values of NRMSE are close to 0, meaning that all of our variables had a good quality imputation. This means we can go on to the next phase: running the feature selection algorithm to see which variables will be included in our final model. According to *Applying random forest in a health administrative data context: a conceptual guide* and *Evaluation of variable selection methods for random forests and omics data sets* the best performing feature selection algorithm for our type of dataset is **Boruta** (Feature Selection with the Boruta Package, Miron B. Kursa & Witold R. Rudnicki). Let's try and run the alogorithm with the default parameters:
+
+```{r, boruta-feature-selection}
+# Identify the target variable column
+target_col <- which(names(imp_cs_wdi) == "cs_section_rate")
+
+# Run Boruta
+set.seed(123)  # for reproducibility
+boruta_output <- Boruta(x = imp_cs_wdi[, -target_col], 
+                        y = imp_cs_wdi[, target_col], 
+                        doTrace = 2,  # 2 for detailed output, 0 for no output
+                        maxRuns = 500)  # increase if Boruta doesn't converge
+```
 
