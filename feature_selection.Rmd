@@ -44,12 +44,12 @@ Although we previously removed empty columns and rows in the initial steps of da
 # Convert data.table to data frame
 cs_wdi <- as.data.frame(cs_wdi)
 
-cs_wdi_cleaned <- cs_wdi %>%
+cs_wdi_cleaned_all_cols <- cs_wdi %>%
   remove_empty(which = "cols", cutoff = 0.2, quiet = FALSE) %>%
   remove_empty(which = "rows", cutoff = 0.2, quiet = FALSE)
 
 # Define columns to remove
-columns_to_remove <- c("country_code", "country", "weight")  # Replace with your column names
+columns_to_remove <- c("country_code", "country", "weight")
 
 # Remove specified columns and select target column
 cs_wdi_cleaned <- cs_wdi_cleaned %>%
@@ -62,78 +62,19 @@ cs_wdi_cleaned[factor_cols] <- lapply(cs_wdi_cleaned[factor_cols], as.factor)
 
 The remaining NA values after this cleaning step will be filled in by an imputation algorithm. We have also chosen a Random Forest based algorithm for the imputation, as "it can be used to impute continuous and/or categorical data including complex interactions and non-linear relations."
 
-```{r}
+```{r, near-zero-variables}
 nzv <- nearZeroVar(cs_wdi_cleaned, saveMetrics = TRUE)
 print(nzv[nzv$zeroVar | nzv$nzv, ])
 ```
 
 We'll remove these 4 problematic variables and try to run missForest again:
 
-```{r}
+```{r, remove-problematic-near-zero}
 #columns_to_remove <- c("SH.HIV.1524.FE.ZS", "SN.ITK.DEFC.ZS", "TM.TAX.TCOM.BC.ZS")
 columns_to_remove <- c("income_group")
 
 cs_wdi_cleaned <- cs_wdi_cleaned %>%
   select(-all_of(columns_to_remove))
-```
-
-```{r}
-summary_data <- data.frame(
-  Variable = names(cs_wdi_cleaned),
-  Class = sapply(cs_wdi_cleaned, class),
-  NAs = sapply(cs_wdi_cleaned, function(x) sum(is.na(x))),
-  Unique = sapply(cs_wdi_cleaned, function(x) length(unique(x))),
-  stringsAsFactors = FALSE
-)
-print(summary_data)
-```
-
-```{r eval=FALSE, include=FALSE}
-# Assuming the last column is your target variable
-target_column <- names(data_clean)[ncol(data_clean)]
-
-# Run Boruta
-set.seed(123)  # for reproducibility
-boruta_output <- Boruta(formula = reformulate(".", response = target_column), 
-                        data = data_clean, 
-                        doTrace = 2,  # Set to 2 for more verbose output
-                        maxRuns = 500)  # Adjust as needed
-```
-
-```{r eval=FALSE, include=FALSE}
-# Print Boruta results
-print(boruta_output)
-
-# Plot Boruta results
-plot(boruta_output)
-
-# Get confirmed important variables
-important_vars <- getSelectedAttributes(boruta_output, withTentative = FALSE)
-
-# Print important variables
-cat("Confirmed important variables:\n")
-print(important_vars)
-
-# Handle tentative attributes
-boruta_fixed <- TentativeRoughFix(boruta_output)
-
-# Get final list of important variables (including tentative)
-final_vars <- getSelectedAttributes(boruta_fixed, withTentative = TRUE)
-
-# Print final variables
-cat("\nFinal list of important variables (including tentative):\n")
-print(final_vars)
-
-# Create a tibble of attribute decisions
-attr_decisions <- attStats(boruta_fixed) %>%
-  as_tibble(rownames = "attribute") %>%
-  arrange(desc(meanImp))
-
-# Print attribute decisions
-print(attr_decisions)
-
-# Optionally, save results
-write_csv(attr_decisions, "boruta_results.csv")
 ```
 
 ```{r, imputation-1}
@@ -145,11 +86,12 @@ imputed_cs_wdi <- missForest(cs_wdi_cleaned, maxiter = 10, ntree = 100, variable
                        xtrue = NA, parallelize = 'no')
 ```
 
-The output for missForest() is a list. The first item is the actual imputed dataframe and the second is the OOB imputation error estimate for each variable that was imputed. Values close to 0 mean a low error rate and 1 means a high error rate (CHECK). Variables with values close to 1 will probaly be removed. Let's check our outputs first and save our imputed dataset to a csv:
+The output for missForest() is a list. The first item is the actual imputed dataframe and the second is the OOB imputation error estimate for each variable that was imputed. Values close to 0 mean a low error rate and 1 means a high error rate (CHECK). Variables with values close to 1 will probaly be removed. Let's check our outputs first and save them in files:
 
 ```{r, imputation-results-df}
 imp_cs_wdi <- imputed_cs_wdi$ximp
 write_csv(imp_cs_wdi, "/Users/andressaflores/Documents/projects/cs_socioeconomic/dados/imputed_cs_wdi_vars.csv")
+saveRDS(imputed_cs_wdi, file = "missForest_output.rds")
 head(imp_cs_wdi)
 tail(imp_cs_wdi)
 ```
@@ -203,20 +145,6 @@ for (i in seq_along(imp_oob_error)) {
   }
 }
 
-# Print summary
-#for (var_name in names(results)) {
-#  cat("\nVariable:", var_name, "\n")
-#  if (results[[var_name]]$type == "categorical") {
-#    cat("Type: Categorical\n")
-#    cat("PFC:", results[[var_name]]$PFC, "\n")
-#  } else {
-#    cat("Type: Numeric\n")
-#    cat("MSE:", results[[var_name]]$MSE, "\n")
-#    cat("NRMSE:", results[[var_name]]$NRMSE, "\n")
-#  }
-#  cat("Interpretation:", results[[var_name]]$interpretation, "\n")
-#}
-
 # Overall summary
 cat("\nOverall Summary:\n")
 cat("Good imputations:", sum(sapply(results, function(x) x$interpretation == "Good")), "\n")
@@ -244,4 +172,123 @@ boruta_output <- Boruta(x = imp_cs_wdi[, -target_col],
                         doTrace = 2,  # 2 for detailed output, 0 for no output
                         maxRuns = 500)  # increase if Boruta doesn't converge
 ```
+
+```{r, boruta-output-info}
+print(boruta_output)
+saveRDS(boruta_output, file = "boruta_output.rds")
+```
+
+```{r, boruta-indicator-stats}
+# Get more detailed information about the indicators
+boruta_results <- attStats(boruta_output)
+print(boruta_results)
+```
+
+
+```{r, select-confirmed-indicators}
+# sort indicators by importance and select only confirmed ones
+confirmed_indicators <- boruta_results %>%
+  tibble::rownames_to_column(var = "indicator_code") %>%
+  select(indicator_code, meanImp, decision) %>%
+  arrange(desc(meanImp)) %>%
+  filter(decision == 'Confirmed')
+
+print(confirmed_indicators)
+```
+
+We have 1012 confirmed important predictors. The Boruta is an all inclusive algorithm, so it will confirm all predictors it detects, without trying to reduce to a minimal ideal, more as an exploratory analysis. This means that we need to consult the reference literature and try to identify evidence, from previous works, as to which variables are more relevant for an accurate prediction model.
+In the future we can test different parameters or other feature selection algorithms. 
+
+For now, let's understand our indicators and which topics they are related to.
+
+### Selecting variables with domain knowledge
+
+We have some metadata regarding our socioeconomic indicators. Let's filter our metadata based on the indicators selected by Boruta:
+
+```{r, load-indicator-metadata}
+indicator_metadata <- read_csv("dados/WDI_CSV/WDISeries.csv", col_select = c(1, 2, 3, 5, 6), col_types = cols(
+  "Series Code" = col_character(),
+  "Topic" = col_character(),
+  "Indicator Name" = col_character(),
+  "Long definition" = col_character(),
+  "Unit of measure" = col_character()
+))
+
+indicator_metadata <- indicator_metadata %>%
+  clean_names() %>%
+  dplyr::rename(indicator_code = 1) %>%
+  relocate(indicator_name, .before = topic)
+
+glimpse(indicator_metadata)
+```
+
+```{r, more-indicator-info}
+selected_indicators_metadata <- confirmed_indicators %>%
+  select(-decision) %>%
+  left_join(indicator_metadata, by = c("indicator_code" = "indicator_code"))
+print(selected_indicators_metadata)
+```
+
+We have decided to use the first 20 indicators from the confirmed indicators to see if we can get a precise model. Let's return to the input dataset from Boruta:
+
+```{r, input-rf-dataset-1}
+dim(imp_cs_wdi)
+head(colnames(imp_cs_wdi), 20)
+tail(colnames(imp_cs_wdi), 20)
+```
+Let's rejoin important identifier columns that we removed before the imputation process:
+
+```{r, input-rf-dataset-2}
+# cs_wdi_cleaned_all_cols is the df one step before the Boruta input dataset
+columns_to_move <- cs_wdi_cleaned_all_cols %>% select(country_code, country, income_group, weight)
+
+# adding back removed columns
+imp_cs_wdi_complete <- imp_cs_wdi %>%
+  add_column(columns_to_move, .before = 1) %>%
+  relocate(weight, .before = cs_section_rate)
+
+# naming rows + row number with unique identifier
+rownames(imp_cs_wdi_complete) <- paste(seq_len(nrow(imp_cs_wdi_complete)), paste(imp_cs_wdi_complete$country_code, imp_cs_wdi_complete$year, sep = "_"), sep = "_")
+
+# previewing dataset
+dim(imp_cs_wdi_complete)
+head(colnames(imp_cs_wdi_complete), 20)
+tail(colnames(imp_cs_wdi_complete), 20)
+```
+Now we can use the top 20 indicators from the Boruta output and filter our dataset:
+
+```{r, input-rf-dataset-3}
+# selecting indicators that will be used in the model
+top_20_indicators <- confirmed_indicators %>%
+  slice_head(n = 20) %>%
+  select(indicator_code) %>%
+  unlist(use.names = FALSE)
+
+#columns that are still 'chr' 
+columns_to_factor <- c("country_code", "country", "income_group")
+
+# select top 20 indicator columns from 1152 select by Boruta + converting cols to factor
+imp_cs_wdi_top20 <- imp_cs_wdi_complete %>%
+  select(1:5, (last_col()-1):last_col(), all_of(top_20_indicators)) %>%
+  mutate(
+    country_code = as.factor(country_code),
+    country = as.factor(country),
+    income_group = as.factor(income_group)
+  )
+
+str(imp_cs_wdi_top20)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
