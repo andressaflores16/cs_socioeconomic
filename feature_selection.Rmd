@@ -279,9 +279,104 @@ imp_cs_wdi_top20 <- imp_cs_wdi_complete %>%
 str(imp_cs_wdi_top20)
 ```
 
+We won't remove `region` since it wasn't considered by Boruta since it didn't have enough categories, but is still interesting to consider in our model, according to the literature. First, we need to split out dataset into train and test:
+
+```{r, input-rf-dataset-4}
+set.seed(123)  # for reproducibility
+
+# removing categorical variables that won't be considered in Random Forest training and testing
+rf_input <- imp_cs_wdi_top20 %>%
+  select(-country_code, -country, -region) %>%
+  na.omit()
+
+# train and test sets
+split <- sample(c('train', 'test'),
+            size = nrow(rf_input),
+            replace = TRUE,
+            prob=c(0.8, 0.2))
+
+table(split)
+
+# Gerando bases de treino, validação e teste
+train    <- rf_input[split == 'train',]
+test     <- rf_input[split == 'test',]
+```
+
+```{r, rf-input-final}
+glimpse(rf_input)
+cat("\n")
+summary(rf_input)
+```
+
+```{r, avalia-regressao-function}
+avalia_regressao <- function(p_var, y_var){
+  n <- length(y_var)
+  SQE <- sum((y_var - p_var)^2)
+  QME <- SQE/n
+  
+  # Cálculo do SSE (Sum of Squares Total)
+  SST <- sum((y_var - mean(y_var, na.rm=TRUE))**2)
+  QMT <- SST/n
+  
+  # Cálculo do R-quadrado
+  R_squared <- 1 - SQE/SST
+  
+  # Imprimindo os resultados
+  cat("SQE: ", SQE, "QME : ", QME, "\n")
+  cat("SST: ", SST, "QMT: ", QMT, "\n")
+  cat("R-quadrado: ", R_squared, "\n")
+  
+}
+```
 
 
+```{r, random-forest-train}
+rf <- randomForest::randomForest(
+  cs_section_rate ~ . - weight,
+  data = train,
+  weights = train$weight,
+  importance = TRUE
+)
+```
 
+
+```{r, random-forest-evaluate}
+
+pRF_train <- predict(rf, train)
+pRF_test  <- predict(rf, test)
+avalia_regressao(pRF_train, train$cs_section_rate)
+avalia_regressao(pRF_test, test$cs_section_rate)
+```
+```{r}
+print(rf$mse)
+```
+
+```{r}
+# Define the control parameters for cross-validation
+ctrl <- trainControl(
+  method = "cv",
+  number = 5,  # 5-fold cross-validation
+  verboseIter = TRUE
+)
+
+# Define the model specification
+rf_spec <- train(
+  cs_section_rate ~ . - weight,  # Assuming 'weight' is the name of your weight column
+  data = rf_input,
+  method = "rf",
+  trControl = ctrl,
+  metric = "RMSE",  # Or another appropriate metric
+  weights = rf_input$weight,  # Specify the weight column
+  tuneGrid = data.frame(mtry = c(2, 4, 6, 8)),  # Example tuning grid
+  importance = TRUE
+)
+
+# Print the results
+print(rf_spec)
+
+# View variable importance
+varImp(rf_spec)
+```
 
 
 
